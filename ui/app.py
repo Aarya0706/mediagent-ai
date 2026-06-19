@@ -138,6 +138,21 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
 
     st.header("🩺 Patient Symptom Analysis")
+    patient_name = st.text_input("Patient Name")
+
+    age = st.number_input(
+        "Age",
+        min_value=0,
+        max_value=120,
+        step=1
+    )
+
+    gender = st.selectbox(
+        "Gender",
+        ["Male", "Female", "Other"]
+    )
+
+    phone = st.text_input("Phone Number")
 
     symptoms = st.text_area(
         "Enter Patient Symptoms",
@@ -207,10 +222,19 @@ with tab1:
             st.subheader("🩺 Patient Summary")
 
             st.info(f"""
+            Patient Name: {patient_name}
+
+            Age: {age}
+
+            Gender: {gender}
+
+            Phone: {phone}
+
             Symptoms Reported:
 
             {symptoms}
             """)
+            
 
              
         
