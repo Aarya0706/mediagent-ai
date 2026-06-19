@@ -29,3 +29,17 @@ MediAgent AI is an agent-based healthcare triage and decision support system tha
 - GitHub
 
 ## Project Structure
+## Screenshots
+
+### Home Page
+![Home Page](screenshots/home.png)
+
+### Patient Summary
+![Patient Summary](screenshots/patient-summary.png)
+
+### Case History
+![Case History](screenshots/case-history.png)
+
+### Doctor Portal
+![Doctor Portal](screenshots/doctor-portal.png)
+ 
