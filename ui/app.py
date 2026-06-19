@@ -171,7 +171,7 @@ with tab1:
             output = output.strip()
 
             response = output.lower()
-              
+            st.write(output)
             department = "General Medicine"
 
             if "cardiology" in response:
@@ -185,10 +185,13 @@ with tab1:
             severity_level = "Mild"
             
 
-            if department == "Emergency":
+            severity_level = "Mild"
+
+            if "critical" in response:
                 severity_level = "Critical"
             elif "moderate" in response:
                 severity_level = "Moderate"
+             
 
             if severity_level == "Critical":
                 st.error("🔴 Severity: Critical")
@@ -216,37 +219,60 @@ with tab1:
             )
              
             st.subheader("📋 Recommended Actions")
+            symptom_text = symptoms.lower()
 
-            if severity_level == "Critical":
-                st.error("""
+            if "fever" in symptom_text:
+                actions = """
+            1. Take adequate rest
+            2. Stay hydrated
+            3. Monitor temperature
+            4. Consult doctor if fever persists
+            """
+
+            elif "headache" in symptom_text:
+                actions = """
+            1. Rest in a quiet environment
+            2. Drink water regularly
+            3. Avoid screen exposure
+            4. Seek medical advice if severe
+            """
+
+            elif "chest pain" in symptom_text:
+                actions = """
             1. Seek immediate medical attention
-            2. Call emergency services
-            3. Do not drive yourself
-            4. Visit nearest emergency room
-            """)
+            2. Avoid physical exertion
+            3. Call emergency services if severe
+            4. Visit nearest emergency department
+            """
 
-            elif severity_level == "Moderate":
-                st.warning("""
-            1. Schedule doctor consultation
-            2. Monitor symptoms closely
-            3. Stay hydrated
-            4. Seek help if symptoms worsen
-            """)
+            elif "vomiting" in symptom_text or "nausea" in symptom_text:
+                actions = """
+            1. Drink oral rehydration fluids
+            2. Avoid heavy meals
+            3. Monitor dehydration signs
+            4. Consult doctor if symptoms continue
+            """
 
             else:
-                st.success("""
+                actions = """
             1. Rest adequately
             2. Stay hydrated
             3. Monitor symptoms
             4. Consult doctor if symptoms persist
-     """)
+            """
+            st.success(actions)
 
              
             report = f"""
             Symptoms:
             {symptoms}
 
-            {output}"""
+            Analysis:
+            {output}
+
+            Recommended Actions:
+            {actions}
+            """
 
             st.download_button(
                 "📄 Download Report",
