@@ -2,6 +2,15 @@
 
 AI-Powered Emergency Assessment & Smart Hospital Routing System
 
+## Live Demo
+
+Streamlit App: https://mediagent-ai-pbgsa8rs7dvyyhbpyydtc7.streamlit.app
+
+## Author
+
+Aarya Shirsath
+B.Tech CSE, VIT Bhopal University
+
 ## Overview
 
 MediAgent AI is an agent-based healthcare triage and decision support system that analyzes patient symptoms, assesses severity, recommends the appropriate medical department, and provides symptom-specific guidance.
@@ -28,7 +37,8 @@ MediAgent AI is an agent-based healthcare triage and decision support system tha
 - LangChain
 - GitHub
 
-## Project Structure
+Developed the complete AI-powered triage workflow, symptom analysis engine, department routing system, patient history management, and Streamlit-based healthcare dashboard.
+
 ## Screenshots
 
 ### Home Page
