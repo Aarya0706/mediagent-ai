@@ -3,8 +3,6 @@ venv/
 .env
 __pycache__/
 *.pyc
-*.db
-data/hospital.db
 .streamlit/secrets.toml
 reports/
 *.txt.bak
