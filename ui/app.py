@@ -397,7 +397,7 @@ Allergies: {allergies.strip() or "None reported"}
  
                 # ── Save to DB ────────────────────────────────────
                  
-                save_case_to_db(
+                save_case_to_db.func(
                     symptoms=f"{body_part}: {symptoms_desc}",
                     severity=severity,
                     department=department
