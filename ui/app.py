@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from agents.pipeline import run_triage_pipeline
+from agents.orchestrator import run_triage_pipeline
 from tools.save_case import save_case_to_db
 
   
