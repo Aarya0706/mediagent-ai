@@ -456,7 +456,7 @@ with tab2:
 
     st.header("📋 Patient Case History")
     if st.button("🗑 Clear All Cases"):
-        conn = sqlite3.connect("DB_PATH")
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM cases")
         conn.commit()
@@ -466,7 +466,7 @@ with tab2:
 
     try:
 
-        conn = sqlite3.connect("DB_PATH")
+        conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query(
             "SELECT * FROM cases ORDER BY created_at DESC",
             conn
