@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
@@ -101,6 +102,48 @@ agent_executor = AgentExecutor(
     tools=tools,
     verbose=True
 )
+ 
+
+def run_triage_pipeline(symptoms: str, patient_context: str) -> dict:
+    if not symptoms or not symptoms.strip():
+        return {"valid": False, "invalid_reason": "No symptoms provided."}
+
+    intake_text = f"Patient Context: {patient_context}\n\nSymptoms:\n{symptoms}"
+
+    try:
+        result = agent_executor.invoke({"input": intake_text})
+        output_text = result.get("output", "")
+    except Exception as e:
+        return {"valid": False, "invalid_reason": f"Agent error: {str(e)}"}
+
+    def extract_field(text, field):
+        match = re.search(rf"{field}:\s*(.+)", text)
+        return match.group(1).strip() if match else ""
+
+    severity   = extract_field(output_text, "Severity") or "Moderate"
+    department = extract_field(output_text, "Department") or "General Medicine"
+    summary    = extract_field(output_text, "Summary") or output_text.strip()
+
+    actions = re.findall(r"\d+\.\s*(.+)", output_text)
+    if not actions:
+        actions = ["Consult a physician for further evaluation."]
+
+    severity_map = {"critical": 9, "moderate": 5, "mild": 2}
+    urgency_score = severity_map.get(severity.lower(), 5)
+
+    warning = "Seek emergency care immediately if symptoms worsen." if severity.lower() == "critical" else ""
+
+    return {
+        "valid": True,
+        "severity": severity,
+        "department": department,
+        "urgency_score": urgency_score,
+        "triage_reasoning": output_text,
+        "intake": intake_text,
+        "summary": summary,
+        "actions": actions,
+        "warning": warning,
+    }
 
 if __name__ == "__main__":
 
