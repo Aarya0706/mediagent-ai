@@ -20,7 +20,7 @@ if ROOT not in sys.path:
 DB_PATH = os.path.join(ROOT, "data", "hospital.db")
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-from agents.orchestrator import run_triage_pipeline
+from agents.pipeline import run_triage_pipeline
 from tools.save_case import save_case_to_db
 
   
@@ -34,6 +34,8 @@ st.markdown("""
 
 .stApp {
     background-color: #FAF7F2;
+    
+
 }
 
 h1, h2, h3 {
@@ -45,11 +47,13 @@ p, label, div {
 }
 
 [data-testid="stTextArea"] textarea {
-    background-color: #FFFDF8 !important;
-    color: #2C3E50 !important;
-    border: 1px solid #D6CFC7 !important;
-    border-radius: 10px;
+    background-color: #FFFFFF !important;
+    color: #1A1A1A !important;
+    border: 2px solid #A67C52 !important;
+    border-radius: 12px !important;
 }
+
+
 
 .stButton > button {
     background-color: #A67C52;
@@ -66,14 +70,7 @@ p, label, div {
     transform: translateY(-2px);
 }
 
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(
-        135deg,
-        #F8F4EE 0%,
-        #F1E7D8 50%,
-        #EFE6D8 100%
-    );
-}
+
 
 h1, h2, h3 {
     color: #2C3E50;
@@ -90,14 +87,7 @@ p, label, div {
     transform: translateY(-2px);
 }
 
-[data-testid="stTextArea"] textarea {
-    background: rgba(255,255,255,0.85) !important;
-    backdrop-filter: blur(10px);
-    border: 2px solid #D8C3A5 !important;
-    border-radius: 18px !important;
-    padding: 15px !important;
 
-}
 button[data-baseweb="tab"] {
     border-radius: 12px;
 }
@@ -397,7 +387,7 @@ Allergies: {allergies.strip() or "None reported"}
  
                 # ── Save to DB ────────────────────────────────────
                  
-                save_case_to_db.func(
+                save_case_to_db(
                     symptoms=f"{body_part}: {symptoms_desc}",
                     severity=severity,
                     department=department
