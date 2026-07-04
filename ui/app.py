@@ -506,7 +506,7 @@ with tab2:
 with tab3:
 
     st.header("📊 Real-Time Hospital Analytics")
-    conn = sqlite3.connect("DB_PATH")
+    conn = sqlite3.connect(DB_PATH)
 
     df = pd.read_sql_query(
         "SELECT * FROM cases",
