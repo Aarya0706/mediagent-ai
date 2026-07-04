@@ -396,15 +396,11 @@ Allergies: {allergies.strip() or "None reported"}
                     st.error(f"⚠️ **When to go to Emergency immediately:** {result['warning']}")
  
                 # ── Save to DB ────────────────────────────────────
+                 
                 save_case_to_db(
-                    patient_name=patient_name,
-                    age=age,
-                    gender=gender,
-                    phone=phone,
                     symptoms=f"{body_part}: {symptoms_desc}",
                     severity=severity,
-                    department=department,
-                    output=result["summary"]
+                    department=department
                 )
  
                 # ── Download report ───────────────────────────────
