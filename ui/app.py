@@ -710,7 +710,7 @@ def _query_openfda(drug1: str, drug2: str) -> dict:
     Returns dict with found: bool, count: int, reactions: list, raw: dict
     """
     base = "https://api.fda.gov/drug/event.json"
-    query = f'patient.drug.medicinalproduct:"{drug1}"+AND+patient.drug.medicinalproduct:"{drug2}"'
+    query = f'patient.drug.medicinalproduct:"{drug1}" AND patient.drug.medicinalproduct:"{drug2}"'
  
     try:
         resp = requests.get(
