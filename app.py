@@ -15,7 +15,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from agents.orchestrator import run_triage_pipeline
+from agents.pipeline import run_triage_pipeline
 from tools.save_case import save_case_to_db
 
   
