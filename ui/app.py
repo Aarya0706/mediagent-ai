@@ -13,7 +13,10 @@ from datetime import datetime
 import sys
 import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Works both locally and on Streamlit Cloud
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from agents.pipeline import run_triage_pipeline
 from tools.save_case import save_case_to_db
