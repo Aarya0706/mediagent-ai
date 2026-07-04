@@ -51,11 +51,7 @@ prompt = ChatPromptTemplate.from_messages(
 
             You MUST call get_department_reference_list after severity assessment.
 
-            You MUST call save_case_to_db after determining severity and department.
-
-            Saving the case is mandatory for every patient analysis.
-
-            Never finish a response until save_case_to_db has been called successfully.
+             
 
 
             Your final answer MUST follow this exact format:
