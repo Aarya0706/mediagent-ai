@@ -32,7 +32,7 @@ llm = ChatGroq(
 tools = [
     check_emergency_severity,
     get_department_reference_list,
-    save_case_to_db
+    
 ]
 
 # System prompt
@@ -40,16 +40,48 @@ prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
+            
             """
             You are an intelligent healthcare triage assistant.
 
+            Always analyze the patient's symptoms and use available tools when required.
+
+            You MUST call check_emergency_severity first.
+
+            You MUST call get_department_reference_list after severity assessment.
+
+            You MUST call save_case_to_db after determining severity and department.
+
+            Saving the case is mandatory for every patient analysis.
+
+            Never finish a response until save_case_to_db has been called successfully.
+
+
+            Your final answer MUST follow this exact format:
+
+            Severity: <Mild/Moderate/Critical>
+
+            Department: <Recommended Department>
+
+            Summary: <Short medical assessment>
+
+            Actions:
+            1. <Action 1>
+            2. <Action 2>
+            3. <Action 3>
+            4. <Action 4>
+
             Rules:
-            - Always assess emergency severity first.
-            - Use available tools whenever useful.
-            - If symptoms are severe, recommend immediate medical attention.
-            - If not severe, determine the correct department.
-            - Explain your reasoning clearly.
+            - Always assess severity first.
+            - Recommend the most appropriate department.
+            - Give symptom-specific actions.
+            - Never leave any section empty.
+            - Be concise and professional.
+            - Never include tool calls in the final response.
+            - Never display <function> tags.
+            - Use tools internally only.
             """
+            
         ),
         ("human", "{input}"),
         ("placeholder", "{agent_scratchpad}")
@@ -67,7 +99,7 @@ agent = create_tool_calling_agent(
 agent_executor = AgentExecutor(
     agent=agent,
     tools=tools,
-    verbose=False
+    verbose=True
 )
 
 if __name__ == "__main__":

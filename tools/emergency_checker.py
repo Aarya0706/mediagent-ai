@@ -31,6 +31,6 @@ def check_emergency_severity(symptoms: str) -> str:
 
     for item in high:
         if item in symptoms:
-            return "High"
+            return "Moderate"
 
-    return "Low"
+    return "Mild"

@@ -27,6 +27,8 @@ def generate_summary(symptoms, severity):
 def save_case_to_db(symptoms: str,
                     severity: str,
                     department: str) -> str:
+     
+    
     """
     Save patient case details into the hospital database.
 
@@ -37,6 +39,7 @@ Use this after determining:
 
 Always save the case before ending the conversation.
     """
+    print("SAVE TOOL CALLED")
 
     conn = sqlite3.connect("data/hospital.db")
     cur = conn.cursor()
@@ -66,6 +69,9 @@ Always save the case before ending the conversation.
     ))
 
     conn.commit()
+    print("CASE SAVED:", symptoms, severity, department)
     conn.close()
+
+    return f"Patient reported: {symptoms}"
 
     return "Case successfully saved."

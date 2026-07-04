@@ -4,7 +4,10 @@ from langchain.tools import tool
 @tool
 def get_department_reference_list(symptoms: str) -> str:
     """
-    Determines the correct department.
+    Provides a suggested medical department based on symptoms.
+
+    This is only a reference tool.
+    The AI agent must review the symptoms and decide the final department recommendation.
     """
 
     symptoms = symptoms.lower()
