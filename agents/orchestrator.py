@@ -33,7 +33,7 @@ llm = ChatGroq(
 tools = [
     check_emergency_severity,
     get_department_reference_list,
-    
+    save_case_to_db
 ]
 
 # System prompt
@@ -124,8 +124,15 @@ def run_triage_pipeline(symptoms: str, patient_context: str) -> dict:
     if not actions:
         actions = ["Consult a physician for further evaluation."]
 
-    severity_map = {"critical": 9, "moderate": 5, "mild": 2}
-    urgency_score = severity_map.get(severity.lower(), 5)
+    # Pull the actual reported pain/discomfort level out of the intake text
+    pain_match = re.search(r"Pain/Discomfort Level:\s*(\d+)/10", intake_text)
+    pain_level = int(pain_match.group(1)) if pain_match else 5
+
+    severity_base = {"critical": 8, "moderate": 5, "mild": 2}.get(severity.lower(), 5)
+
+    # Blend severity label with actual reported pain level, so specifics of
+    # the case (not just the 3-bucket label) affect the final score
+    urgency_score = min(10, max(1, round((severity_base + pain_level) / 2)))
 
     warning = "Seek emergency care immediately if symptoms worsen." if severity.lower() == "critical" else ""
 
