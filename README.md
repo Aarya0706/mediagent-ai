@@ -113,17 +113,14 @@ mediagent-ai/
 └── README.md
 
 
-### Patient Triage
+### Home
 ![Home](screenshots/home.png)
 
-### Analytics Dashboard  
+### Analytics Dashboard
 ![Analytics](screenshots/analytics.png)
 
 ### Doctor Portal
 ![Doctor Portal](screenshots/doctor-portal.png)
-
-### Drug Interaction Checker
-![Drug Checker](screenshots/drug-checker.png)
 
 
 Author
