@@ -116,14 +116,14 @@ mediagent-ai/
 ### Patient Triage
 ![Home](screenshots/home.png)
 
-### Drug Interaction Checker
-![Drug Checker](screenshots/Drug%20interaction%20che.png)
-
-### Case History
+### Analytics Dashboard  
 ![Analytics](screenshots/analytics.png)
 
 ### Doctor Portal
-![Doctor Portal](screenshots/doctor%20portal.png)
+![Doctor Portal](screenshots/doctor-portal.png)
+
+### Drug Interaction Checker
+![Drug Checker](screenshots/drug-checker.png)
 
 
 Author
