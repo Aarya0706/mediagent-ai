@@ -780,28 +780,36 @@ with tab5:
  
     # Quick example buttons
       
+    d_col1, d_col2 = st.columns(2)
+    with d_col1:
+        drug1 = st.text_input("💊 Drug 1", 
+            value=st.session_state.get("drug1", ""),
+            key="drug1_input",
+            placeholder="e.g. Aspirin")
+    with d_col2:
+        drug2 = st.text_input("💊 Drug 2",
+            value=st.session_state.get("drug2", ""),
+            key="drug2_input",
+            placeholder="e.g. Warfarin")
+
     st.markdown("**Quick examples:**")
     ex_col1, ex_col2, ex_col3, ex_col4 = st.columns(4)
-
     if ex_col1.button("Aspirin + Warfarin"):
         st.session_state["drug1"] = "Aspirin"
         st.session_state["drug2"] = "Warfarin"
+        st.rerun()
     if ex_col2.button("Metformin + Ibuprofen"):
         st.session_state["drug1"] = "Metformin"
         st.session_state["drug2"] = "Ibuprofen"
+        st.rerun()
     if ex_col3.button("Lisinopril + Potassium"):
         st.session_state["drug1"] = "Lisinopril"
         st.session_state["drug2"] = "Potassium"
+        st.rerun()
     if ex_col4.button("Sertraline + Tramadol"):
         st.session_state["drug1"] = "Sertraline"
         st.session_state["drug2"] = "Tramadol"
-
-    drug1 = st.text_input("💊 Drug 1", 
-        value=st.session_state.get("drug1", ""),
-        key="drug1_input")
-    drug2 = st.text_input("💊 Drug 2",
-        value=st.session_state.get("drug2", ""),
-        key="drug2_input")
+        st.rerun()
  
     st.divider()
  
