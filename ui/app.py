@@ -12,6 +12,12 @@ from datetime import datetime
 
 import sys
 import os
+from zoneinfo import ZoneInfo
+
+IST = ZoneInfo("Asia/Kolkata")
+
+def now_ist():
+    return datetime.now(IST)
 
 # Works both locally and on Streamlit Cloud
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -374,7 +380,7 @@ Allergies: {allergies.strip() or "None reported"}
 **AI Assessment:** {result['summary']}
                 """)
  
-                st.caption(f"🕒 Analysis generated on {datetime.now().strftime('%d-%m-%Y %H:%M')}")
+                st.caption(f"🕒 Analysis generated on {now_ist().strftime('%d-%m-%Y %H:%M')}")
  
                 # ── Recommended actions ───────────────────────────
                 st.subheader("📋 Recommended Actions")
@@ -395,7 +401,7 @@ Allergies: {allergies.strip() or "None reported"}
  
                 # ── Download report ───────────────────────────────
                 report = f"""MediAgent AI — Patient Report
-Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}
+Generated: {now_ist().strftime('%d-%m-%Y %H:%M')}
  
 PATIENT DETAILS
 Name     : {patient_name}
@@ -432,7 +438,7 @@ RECOMMENDED ACTIONS
                 st.download_button(
                     "📄 Download Full Report",
                     report,
-                    file_name=f"report_{patient_name.replace(' ', '_')}_{datetime.now().strftime('%d%m%Y')}.txt"
+                    file_name=f"report_{patient_name.replace(' ', '_')}_{now_ist().strftime('%d%m%Y')}.txt"
                 )
 
 # -------------------------

@@ -1,6 +1,8 @@
 import sqlite3
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
+IST = ZoneInfo("Asia/Kolkata")
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "hospital.db")
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -26,7 +28,7 @@ def save_case_to_db(symptoms: str, severity: str, department: str) -> str:
         severity,
         department,
         f"Patient reported: {symptoms}. Severity: {severity}.",
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
     ))
     conn.commit()
     conn.close()
