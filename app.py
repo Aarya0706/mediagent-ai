@@ -779,31 +779,29 @@ with tab5:
         )
  
     # Quick example buttons
+      
     st.markdown("**Quick examples:**")
     ex_col1, ex_col2, ex_col3, ex_col4 = st.columns(4)
- 
+
     if ex_col1.button("Aspirin + Warfarin"):
-        st.session_state["d1"] = "Aspirin"
-        st.session_state["d2"] = "Warfarin"
-        st.rerun()
+        st.session_state["drug1"] = "Aspirin"
+        st.session_state["drug2"] = "Warfarin"
     if ex_col2.button("Metformin + Ibuprofen"):
-        st.session_state["d1"] = "Metformin"
-        st.session_state["d2"] = "Ibuprofen"
-        st.rerun()
+        st.session_state["drug1"] = "Metformin"
+        st.session_state["drug2"] = "Ibuprofen"
     if ex_col3.button("Lisinopril + Potassium"):
-        st.session_state["d1"] = "Lisinopril"
-        st.session_state["d2"] = "Potassium"
-        st.rerun()
+        st.session_state["drug1"] = "Lisinopril"
+        st.session_state["drug2"] = "Potassium"
     if ex_col4.button("Sertraline + Tramadol"):
-        st.session_state["d1"] = "Sertraline"
-        st.session_state["d2"] = "Tramadol"
-        st.rerun()
- 
-    # Apply session state if set by quick buttons
-    if "d1" in st.session_state and not drug1:
-        drug1 = st.session_state["d1"]
-    if "d2" in st.session_state and not drug2:
-        drug2 = st.session_state["d2"]
+        st.session_state["drug1"] = "Sertraline"
+        st.session_state["drug2"] = "Tramadol"
+
+    drug1 = st.text_input("💊 Drug 1", 
+        value=st.session_state.get("drug1", ""),
+        key="drug1_input")
+    drug2 = st.text_input("💊 Drug 2",
+        value=st.session_state.get("drug2", ""),
+        key="drug2_input")
  
     st.divider()
  
