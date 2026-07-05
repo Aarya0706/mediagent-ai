@@ -27,7 +27,7 @@ if ROOT not in sys.path:
 DB_PATH = os.path.join(ROOT, "data", "hospital.db")
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-from agents.pipeline import run_triage_pipeline
+from agents.orchestrator import run_triage_pipeline
 from tools.save_case import save_case_to_db
 
   
