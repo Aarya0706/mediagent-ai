@@ -13,6 +13,10 @@ from datetime import datetime
 import sys
 import os
 
+# ── DB path (works locally and on Streamlit Cloud) ────────────────
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "hospital.db")
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from agents.pipeline import run_triage_pipeline
@@ -446,7 +450,7 @@ with tab2:
 
     st.header("📋 Patient Case History")
     if st.button("🗑 Clear All Cases"):
-        conn = sqlite3.connect("data/hospital.db")
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM cases")
         conn.commit()
@@ -456,7 +460,7 @@ with tab2:
 
     try:
 
-        conn = sqlite3.connect("data/hospital.db")
+        conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query(
             "SELECT * FROM cases ORDER BY created_at DESC",
             conn
@@ -496,7 +500,7 @@ with tab2:
 with tab3:
 
     st.header("📊 Real-Time Hospital Analytics")
-    conn = sqlite3.connect("data/hospital.db")
+    conn = sqlite3.connect(DB_PATH)
 
     df = pd.read_sql_query(
         "SELECT * FROM cases",
@@ -613,7 +617,7 @@ with tab4:
 
     st.header("👨‍⚕️ Doctor Portal")
 
-    conn = sqlite3.connect("data/hospital.db")
+    conn = sqlite3.connect(DB_PATH)
 
     doctor_df = pd.read_sql_query(
         """
