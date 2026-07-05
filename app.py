@@ -424,7 +424,8 @@ Allergies: {allergies.strip() or "None reported"}
                 )
  
                 # ── Download report ───────────────────────────────
-                report = f"""MediAgent AI — Patient Report
+                
+report = f"""MediAgent AI - Patient Report
 Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}
  
 PATIENT DETAILS
