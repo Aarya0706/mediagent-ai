@@ -753,6 +753,7 @@ def _parse_drug_field(text: str, field: str) -> str:
  
  
 # ── TAB 5 ─────────────────────────────────────────────────────────
+# ── TAB 5 ─────────────────────────────────────────────────────────
 with tab5:
     st.header("💊 Drug Interaction Checker")
     st.markdown(
@@ -761,28 +762,12 @@ with tab5:
         "Zero AI hallucinations on interaction data."
     )
     st.caption("ℹ️ Source: U.S. Food & Drug Administration (api.fda.gov) · No API key required")
- 
+
     st.divider()
- 
-    d_col1, d_col2 = st.columns(2)
- 
-    with d_col1:
-        drug1 = st.text_input(
-            "💊 Drug 1",
-            placeholder="e.g. Aspirin",
-        )
- 
-    with d_col2:
-        drug2 = st.text_input(
-            "💊 Drug 2",
-            placeholder="e.g. Warfarin",
-        )
- 
-    # Quick example buttons
-      
+
     d_col1, d_col2 = st.columns(2)
     with d_col1:
-        drug1 = st.text_input("💊 Drug 1", 
+        drug1 = st.text_input("💊 Drug 1",
             value=st.session_state.get("drug1", ""),
             key="drug1_input",
             placeholder="e.g. Aspirin")
@@ -810,27 +795,21 @@ with tab5:
         st.session_state["drug1"] = "Sertraline"
         st.session_state["drug2"] = "Tramadol"
         st.rerun()
- 
+
     st.divider()
- 
+
     if st.button("🔍 Check Interaction", use_container_width=True):
- 
         if not drug1.strip() or not drug2.strip():
             st.warning("Please enter both drug names.")
- 
         elif drug1.strip().lower() == drug2.strip().lower():
             st.warning("Please enter two different drug names.")
- 
         else:
             with st.spinner(f"Querying OpenFDA for {drug1} + {drug2}..."):
                 fda_result = _query_openfda(drug1.strip(), drug2.strip())
- 
-            # ── API error ─────────────────────────────────────────
+
             if "error" in fda_result:
                 st.error(f"OpenFDA API error: {fda_result['error']}")
- 
             else:
-                # ── Build FDA summary for LLM ─────────────────────
                 if fda_result["found"]:
                     fda_summary = (
                         f"Found {fda_result['count']:,} adverse event reports "
@@ -839,23 +818,20 @@ with tab5:
                     )
                 else:
                     fda_summary = f"No adverse event co-reports found in OpenFDA for {drug1} and {drug2}."
- 
-                # ── LLM explanation ───────────────────────────────
+
                 with st.spinner("Generating clinical explanation..."):
                     llm_output = _drug_chain.invoke({
                         "drug1":    drug1.strip(),
                         "drug2":    drug2.strip(),
                         "fda_data": fda_summary,
                     })
- 
-                severity_label  = _parse_drug_field(llm_output, "SEVERITY")
-                plain_summary   = _parse_drug_field(llm_output, "PLAIN_SUMMARY")
-                mechanism       = _parse_drug_field(llm_output, "MECHANISM")
-                patient_advice  = _parse_drug_field(llm_output, "PATIENT_ADVICE")
- 
-                # ── Severity badge ────────────────────────────────
+
+                severity_label = _parse_drug_field(llm_output, "SEVERITY")
+                plain_summary  = _parse_drug_field(llm_output, "PLAIN_SUMMARY")
+                mechanism      = _parse_drug_field(llm_output, "MECHANISM")
+                patient_advice = _parse_drug_field(llm_output, "PATIENT_ADVICE")
+
                 st.markdown("### 📊 Interaction Result")
- 
                 sev_lower = severity_label.lower()
                 if "major" in sev_lower:
                     st.error(f"🔴 **Severity: {severity_label}** — Significant risk. Consult your doctor immediately.")
@@ -865,35 +841,27 @@ with tab5:
                     st.success(f"🟢 **Severity: {severity_label}** — Low risk. Monitor for any unusual symptoms.")
                 else:
                     st.info(f"⚪ **Severity: {severity_label}** — Insufficient data to assess risk.")
- 
-                # ── FDA data card ─────────────────────────────────
+
                 st.markdown(f"**OpenFDA Reports Found:** {fda_result['count']:,}")
                 if fda_result["reactions"]:
                     st.markdown("**Top Reported Adverse Reactions:**")
                     rxn_cols = st.columns(min(len(fda_result["reactions"]), 5))
                     for i, rxn in enumerate(fda_result["reactions"][:5]):
                         rxn_cols[i % 5].markdown(f"• {rxn}")
- 
+
                 st.divider()
- 
-                # ── Clinical explanation ──────────────────────────
                 ic1, ic2 = st.columns(2)
- 
                 with ic1:
                     st.markdown("**📝 Plain English Summary**")
                     st.info(plain_summary or "Not available.")
- 
                     st.markdown("**🔬 Mechanism**")
                     st.info(mechanism or "Not available.")
- 
                 with ic2:
                     st.markdown("**✅ What You Should Do**")
                     st.warning(patient_advice or "Consult your doctor or pharmacist.")
- 
                     st.markdown("**💊 Drug Pair Checked**")
                     st.code(f"{drug1.strip()}  +  {drug2.strip()}", language=None)
- 
-                # ── Source attribution ────────────────────────────
+
                 st.divider()
                 st.caption(
                     "📌 Interaction data sourced from OpenFDA Adverse Event Reporting System (FAERS). "
