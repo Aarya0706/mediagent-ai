@@ -698,41 +698,41 @@ _drug_chain = _drug_prompt | _drug_llm | StrOutputParser()
  
  
 def _query_openfda(drug1: str, drug2: str) -> dict:
-    base = "https://api.fda.gov/drug/event.json"
+    # Use drug label endpoint for interaction warnings
+    base = "https://api.fda.gov/drug/label.json"
     
-    # Try multiple name formats
-    names1 = [drug1.upper(), drug1.lower(), drug1.title()]
-    names2 = [drug2.upper(), drug2.lower(), drug2.title()]
-    
-    for n1 in names1:
-        for n2 in names2:
-            try:
-                query = f'patient.drug.medicinalproduct:"{n1}"+AND+patient.drug.medicinalproduct:"{n2}"'
-                resp = requests.get(
-                    base,
-                    params={"search": query, "limit": 5},
-                    timeout=8
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    total = data.get("meta", {}).get("results", {}).get("total", 0)
-                    if total > 0:
-                        reactions = set()
-                        for result in data.get("results", []):
-                            for rxn in result.get("patient", {}).get("reaction", []):
-                                rt = rxn.get("reactionmeddrapt", "")
-                                if rt:
-                                    reactions.add(rt.title())
-                        return {
-                            "found": True,
-                            "count": total,
-                            "reactions": list(reactions)[:10],
-                            "raw": data,
-                        }
-            except Exception:
-                continue
-    
-    return {"found": False, "count": 0, "reactions": [], "raw": {}}
+    try:
+        resp = requests.get(
+            base,
+            params={
+                "search": f'drug_interactions:"{drug2.lower()}"&openfda.brand_name:"{drug1.lower()}"',
+                "limit": 3
+            },
+            timeout=8
+        )
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            total = data.get("meta", {}).get("results", {}).get("total", 0)
+            results = data.get("results", [])
+            
+            interactions = []
+            for r in results:
+                di = r.get("drug_interactions", [])
+                if di:
+                    interactions.extend(di[:2])
+            
+            return {
+                "found": total > 0,
+                "count": total,
+                "reactions": interactions[:5],
+                "raw": data,
+            }
+        
+        return {"found": False, "count": 0, "reactions": [], "raw": {}}
+        
+    except Exception as e:
+        return {"found": False, "count": 0, "reactions": [], "raw": {}, "error": str(e)}
  
  
 def _parse_drug_field(text: str, field: str) -> str:
@@ -834,10 +834,9 @@ with tab5:
 
                 st.markdown(f"**OpenFDA Reports Found:** {fda_result['count']:,}")
                 if fda_result["reactions"]:
-                    st.markdown("**Top Reported Adverse Reactions:**")
-                    rxn_cols = st.columns(min(len(fda_result["reactions"]), 5))
-                    for i, rxn in enumerate(fda_result["reactions"][:5]):
-                        rxn_cols[i % 5].markdown(f"• {rxn}")
+                    st.markdown("**Interaction Warnings from FDA Label:**")
+                    for rxn in fda_result["reactions"][:2]:
+                        st.warning(rxn[:300] + "..." if len(rxn) > 300 else rxn)
 
                 st.divider()
                 ic1, ic2 = st.columns(2)
