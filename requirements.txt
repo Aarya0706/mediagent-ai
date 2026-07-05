@@ -4,6 +4,6 @@ plotly
 requests
 python-dotenv
 fpdf2
-langchain==0.3.7
-langchain-groq==0.2.1
-pydantic==2.9.2
+langchain==0.2.16
+langchain-core==0.2.43
+langchain-groq==0.1.9
