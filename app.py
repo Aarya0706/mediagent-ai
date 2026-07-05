@@ -21,7 +21,7 @@ def now_ist():
     return datetime.now(IST)
 
 # Works both locally and on Streamlit Cloud
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 DB_PATH = os.path.join(ROOT, "data", "hospital.db")
