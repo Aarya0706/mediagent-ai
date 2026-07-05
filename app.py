@@ -154,7 +154,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 # -------------------------
 # TAB 1 - TRIAGE
-# -------------------------
+
 with tab1:
     st.header("🩺 Patient Symptom Analysis")
 
@@ -164,7 +164,7 @@ with tab1:
         background: linear-gradient(135deg, #c0392b, #e74c3c);
         border-radius: 16px;
         padding: 20px 24px;
-        margin-bottom: 20px;
+        margin-bottom: 16px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -178,8 +178,39 @@ with tab1:
                 If you or someone is in immediate danger - do not use this form
             </div>
         </div>
-        <div
- 
+        <div style="text-align:right;">
+            <div style="color:white; font-size:28px; font-weight:900;">📞 112</div>
+            <div style="color:#FECACA; font-size:12px;">India Emergency Helpline</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    sos_col1, sos_col2, sos_col3 = st.columns(3)
+    with sos_col1:
+        st.markdown("""
+        <div style="background:#FFF5F5; border:1px solid #FECACA; border-radius:12px; padding:12px; text-align:center; margin-bottom:16px;">
+            <div style="font-size:22px;">🚑</div>
+            <div style="font-weight:700; color:#c0392b; font-size:14px;">Ambulance</div>
+            <div style="font-size:18px; font-weight:800; color:#c0392b;">102</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sos_col2:
+        st.markdown("""
+        <div style="background:#FFF5F5; border:1px solid #FECACA; border-radius:12px; padding:12px; text-align:center; margin-bottom:16px;">
+            <div style="font-size:22px;">🏥</div>
+            <div style="font-weight:700; color:#c0392b; font-size:14px;">Emergency</div>
+            <div style="font-size:18px; font-weight:800; color:#c0392b;">108</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sos_col3:
+        st.markdown("""
+        <div style="background:#FFF5F5; border:1px solid #FECACA; border-radius:12px; padding:12px; text-align:center; margin-bottom:16px;">
+            <div style="font-size:22px;">👮</div>
+            <div style="font-weight:700; color:#c0392b; font-size:14px;">Police</div>
+            <div style="font-size:18px; font-weight:800; color:#c0392b;">100</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     # ── Section 1: Patient Info ───────────────────────────────────
     st.markdown("#### 👤 Patient Information")
     col1, col2 = st.columns(2)
@@ -242,11 +273,11 @@ with tab1:
  
         # Visual label for slider
         if severity_slider <= 3:
-            st.success(f"Level {severity_slider}/10 - Mild discomfort")
+            st.success(f"Level {severity_slider}/10 — Mild discomfort")
         elif severity_slider <= 6:
-            st.warning(f"Level {severity_slider}/10 - Moderate discomfort")
+            st.warning(f"Level {severity_slider}/10 — Moderate discomfort")
         else:
-            st.error(f"Level {severity_slider}/10 - Severe discomfort")
+            st.error(f"Level {severity_slider}/10 — Severe discomfort")
  
         onset_type = st.radio(
             "How did symptoms start?",
@@ -383,7 +414,7 @@ Allergies: {allergies.strip() or "None reported"}
                 st.progress(urgency / 10)
  
                 if severity == "Critical":
-                    st.error("🚨 IMMEDIATE MEDICAL ATTENTION REQUIRED - Go to Emergency now")
+                    st.error("🚨 IMMEDIATE MEDICAL ATTENTION REQUIRED — Go to Emergency now")
  
                 # ── Triage reasoning ──────────────────────────────
                 with st.expander("🧠 View AI Triage Reasoning"):
@@ -424,8 +455,7 @@ Allergies: {allergies.strip() or "None reported"}
                 )
  
                 # ── Download report ───────────────────────────────
-                
-report = f"""MediAgent AI - Patient Report
+                report = f"""MediAgent AI — Patient Report
 Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}
  
 PATIENT DETAILS
@@ -695,7 +725,7 @@ with tab4:
 
 # ── Drug checker LLM (reuses your Groq key) ──────────────────────
 _drug_llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="llama-3.1-8b-instant",
     temperature=0.2,
     api_key=os.getenv("GROQ_API_KEY")
 )
@@ -709,7 +739,7 @@ Respond in this EXACT format:
 SEVERITY: <Major | Moderate | Minor | Unknown>
 PLAIN_SUMMARY: <2-3 sentences explaining the interaction in simple language a patient can understand. No jargon.>
 MECHANISM: <1 sentence explaining WHY this interaction happens, if known.>
-PATIENT_ADVICE: <1-2 sentences on what the patient should do - e.g. consult doctor, avoid combination, monitor symptoms.>
+PATIENT_ADVICE: <1-2 sentences on what the patient should do — e.g. consult doctor, avoid combination, monitor symptoms.>
  
 If there is no interaction data found, say:
 SEVERITY: Unknown
@@ -775,7 +805,7 @@ with tab5:
     st.header("💊 Drug Interaction Checker")
     st.markdown(
         "Check for potential interactions between two medications. "
-        "Results are sourced live from **OpenFDA** - a real pharmacological database. "
+        "Results are sourced live from **OpenFDA** — a real pharmacological database. "
         "Zero AI hallucinations on interaction data."
     )
     st.caption("ℹ️ Source: U.S. Food & Drug Administration (api.fda.gov) · No API key required")
@@ -851,13 +881,13 @@ with tab5:
                 st.markdown("### 📊 Interaction Result")
                 sev_lower = severity_label.lower()
                 if "major" in sev_lower:
-                    st.error(f"🔴 **Severity: {severity_label}** - Significant risk. Consult your doctor immediately.")
+                    st.error(f"🔴 **Severity: {severity_label}** — Significant risk. Consult your doctor immediately.")
                 elif "moderate" in sev_lower:
-                    st.warning(f"🟡 **Severity: {severity_label}** - Use with caution. Doctor consultation advised.")
+                    st.warning(f"🟡 **Severity: {severity_label}** — Use with caution. Doctor consultation advised.")
                 elif "minor" in sev_lower:
-                    st.success(f"🟢 **Severity: {severity_label}** - Low risk. Monitor for any unusual symptoms.")
+                    st.success(f"🟢 **Severity: {severity_label}** — Low risk. Monitor for any unusual symptoms.")
                 else:
-                    st.info(f"⚪ **Severity: {severity_label}** - Insufficient data to assess risk.")
+                    st.info(f"⚪ **Severity: {severity_label}** — Insufficient data to assess risk.")
 
                 st.markdown(f"**OpenFDA Reports Found:** {fda_result['count']:,}")
                 if fda_result["reactions"]:
@@ -882,5 +912,5 @@ with tab5:
                 st.caption(
                     "📌 Interaction data sourced from OpenFDA Adverse Event Reporting System (FAERS). "
                     "Clinical explanation generated by Groq LLaMA3. "
-                    "This tool is for informational purposes only - always consult a licensed pharmacist or physician."
+                    "This tool is for informational purposes only — always consult a licensed pharmacist or physician."
                 )
