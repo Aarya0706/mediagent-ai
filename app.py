@@ -257,8 +257,13 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
             status = st.empty()
             status.markdown("🔍 **Agent 1/3:** Validating and normalising intake...")
             progress_bar.progress(10)
+            
+            st.write("Calling pipeline...")
 
             result = run_triage_pipeline(symptoms, patient_context)
+
+            st.write("Pipeline finished")
+            st.write(result)
 
             progress_bar.progress(70)
             status.markdown("📋 **Agent 3/3:** Generating recommendations...")

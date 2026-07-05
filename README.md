@@ -140,14 +140,14 @@ mediagent-ai/
 ### Patient Triage
 ![Home](screenshots/home.png)
 
-### Assessment Results
-![Patient Summary](screenshots/patient-summary.png)
-
-### Case History
-![Case History](screenshots/case-history.png)
+### Analytics Dashboard
+![Analytics](screenshots/analytics.png)
 
 ### Doctor Portal
 ![Doctor Portal](screenshots/doctor-portal.png)
+
+### Drug Interaction Checker
+![Drug Checker](screenshots/drug-checker.png)
 
 ---
 
