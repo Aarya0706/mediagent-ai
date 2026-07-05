@@ -8,6 +8,7 @@ import sqlite3
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
+from fpdf import FPDF
  
 
 import sys
@@ -139,6 +140,76 @@ st.markdown("""
 AI-powered emergency assessment, department routing,
 doctor workflow management, and patient analytics.
 """)
+def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_desc,
+                         duration, onset_type, severity_slider, conditions_str,
+                         severity, department, urgency, result):
+    pdf = FPDF()
+    pdf.add_page()
+
+    pdf.set_fill_color(166, 124, 82)
+    pdf.rect(0, 0, 210, 25, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_xy(10, 7)
+    pdf.cell(0, 10, "MediAgent AI - Patient Report", ln=True)
+
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_xy(10, 30)
+    pdf.cell(0, 6, f"Generated: {now_ist().strftime('%d-%m-%Y %H:%M')}", ln=True)
+
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Patient Details", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7,
+        f"Name: {patient_name}   |   Age: {age}   |   Gender: {gender}   |   Phone: {phone}")
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Symptom Intake", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7,
+        f"Body Area: {body_part}\n"
+        f"Description: {symptoms_desc}\n"
+        f"Duration: {duration}   |   Onset: {onset_type}   |   Pain Level: {severity_slider}/10\n"
+        f"Known Conditions: {conditions_str}"
+    )
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Triage Result", ln=True)
+
+    sev_colors = {"Critical": (231, 76, 60), "Moderate": (241, 196, 15), "Mild": (46, 204, 113)}
+    r, g, b = sev_colors.get(severity, (100, 100, 100))
+    pdf.set_fill_color(r, g, b)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(50, 8, f" Severity: {severity} ", fill=True, ln=False)
+    pdf.set_text_color(40, 40, 40)
+    pdf.cell(0, 8, f"   Department: {department}   |   Urgency: {urgency}/10", ln=True)
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "AI Assessment", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7, result['summary'])
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Recommended Actions", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    for i, action in enumerate(result["actions"], 1):
+        pdf.multi_cell(0, 7, f"{i}. {action}")
+
+    if result["warning"]:
+        pdf.ln(3)
+        pdf.set_fill_color(231, 76, 60)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.multi_cell(0, 8, f"EMERGENCY WARNING: {result['warning']}", fill=True)
+
+    return bytes(pdf.output())
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Patient Triage",
@@ -435,10 +506,16 @@ RECOMMENDED ACTIONS
  
 {"EMERGENCY WARNING: " + result['warning'] if result['warning'] else ""}
 """
+                pdf_bytes = generate_pdf_report(
+                    patient_name, age, gender, phone, body_part, symptoms_desc,
+                    duration, onset_type, severity_slider, conditions_str,
+                    severity, department, urgency, result
+                )
                 st.download_button(
-                    "📄 Download Full Report",
-                    report,
-                    file_name=f"report_{patient_name.replace(' ', '_')}_{now_ist().strftime('%d%m%Y')}.txt"
+                    "📄 Download PDF Report",
+                    pdf_bytes,
+                    file_name=f"report_{patient_name.replace(' ', '_')}_{now_ist().strftime('%d%m%Y')}.pdf",
+                    mime="application/pdf"
                 )
 
 # -------------------------
