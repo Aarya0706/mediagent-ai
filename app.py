@@ -698,51 +698,41 @@ _drug_chain = _drug_prompt | _drug_llm | StrOutputParser()
  
  
 def _query_openfda(drug1: str, drug2: str) -> dict:
-    """
-    Queries OpenFDA drug adverse events API for co-reported events.
-    No API key required.
-    Returns dict with found: bool, count: int, reactions: list, raw: dict
-    """
     base = "https://api.fda.gov/drug/event.json"
-    query = f'patient.drug.medicinalproduct:"{drug1}"+AND+patient.drug.medicinalproduct:"{drug2}"'
- 
-    try:
-        resp = requests.get(
-            base,
-            params={"search": query, "limit": 5},
-            timeout=8
-        )
- 
-        if resp.status_code == 200:
-            data = resp.json()
-            results = data.get("results", [])
-            total   = data.get("meta", {}).get("results", {}).get("total", 0)
- 
-            # Extract top reactions from results
-            reactions = set()
-            for result in results:
-                for rxn in result.get("patient", {}).get("reaction", []):
-                    rt = rxn.get("reactionmeddrapt", "")
-                    if rt:
-                        reactions.add(rt.title())
- 
-            return {
-                "found":     total > 0,
-                "count":     total,
-                "reactions": list(reactions)[:10],
-                "raw":       data,
-            }
- 
-        elif resp.status_code == 404:
-            return {"found": False, "count": 0, "reactions": [], "raw": {}}
- 
-        else:
-            return {"found": False, "count": 0, "reactions": [], "raw": {}, "error": f"API status {resp.status_code}"}
- 
-    except requests.exceptions.Timeout:
-        return {"found": False, "count": 0, "reactions": [], "raw": {}, "error": "OpenFDA API timed out"}
-    except Exception as e:
-        return {"found": False, "count": 0, "reactions": [], "raw": {}, "error": str(e)}
+    
+    # Try multiple name formats
+    names1 = [drug1.upper(), drug1.lower(), drug1.title()]
+    names2 = [drug2.upper(), drug2.lower(), drug2.title()]
+    
+    for n1 in names1:
+        for n2 in names2:
+            try:
+                query = f'patient.drug.medicinalproduct:"{n1}"+AND+patient.drug.medicinalproduct:"{n2}"'
+                resp = requests.get(
+                    base,
+                    params={"search": query, "limit": 5},
+                    timeout=8
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    total = data.get("meta", {}).get("results", {}).get("total", 0)
+                    if total > 0:
+                        reactions = set()
+                        for result in data.get("results", []):
+                            for rxn in result.get("patient", {}).get("reaction", []):
+                                rt = rxn.get("reactionmeddrapt", "")
+                                if rt:
+                                    reactions.add(rt.title())
+                        return {
+                            "found": True,
+                            "count": total,
+                            "reactions": list(reactions)[:10],
+                            "raw": data,
+                        }
+            except Exception:
+                continue
+    
+    return {"found": False, "count": 0, "reactions": [], "raw": {}}
  
  
 def _parse_drug_field(text: str, field: str) -> str:
@@ -753,7 +743,7 @@ def _parse_drug_field(text: str, field: str) -> str:
  
  
 # ── TAB 5 ─────────────────────────────────────────────────────────
-# ── TAB 5 ─────────────────────────────────────────────────────────
+ 
 with tab5:
     st.header("💊 Drug Interaction Checker")
     st.markdown(
