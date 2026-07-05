@@ -157,6 +157,28 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # -------------------------
 with tab1:
     st.header("🩺 Patient Symptom Analysis")
+
+    # ── EMERGENCY SOS ─────────────────────────────────────────────
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #c0392b, #e74c3c);
+        border-radius: 16px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 4px 20px rgba(231,76,60,0.3);
+    ">
+        <div>
+            <div style="color:white; font-size:20px; font-weight:800; margin-bottom:4px;">
+                🚨 Life-Threatening Emergency?
+            </div>
+            <div style="color:#FECACA; font-size:14px;">
+                If you or someone is in immediate danger — do not use this form
+            </div>
+        </div>
+        <div
  
     # ── Section 1: Patient Info ───────────────────────────────────
     st.markdown("#### 👤 Patient Information")
