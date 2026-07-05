@@ -8,16 +8,24 @@ import sqlite3
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
+from fpdf import FPDF
  
 
 import sys
 import os
+from zoneinfo import ZoneInfo
 
-# ── DB path (works locally and on Streamlit Cloud) ────────────────
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "hospital.db")
+IST = ZoneInfo("Asia/Kolkata")
+
+def now_ist():
+    return datetime.now(IST)
+
+# Works both locally and on Streamlit Cloud
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+DB_PATH = os.path.join(ROOT, "data", "hospital.db")
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from agents.pipeline import run_triage_pipeline
 from tools.save_case import save_case_to_db
@@ -33,6 +41,8 @@ st.markdown("""
 
 .stApp {
     background-color: #FAF7F2;
+    
+
 }
 
 h1, h2, h3 {
@@ -44,11 +54,13 @@ p, label, div {
 }
 
 [data-testid="stTextArea"] textarea {
-    background-color: #FFFDF8 !important;
-    color: #2C3E50 !important;
-    border: 1px solid #D6CFC7 !important;
-    border-radius: 10px;
+    background-color: #FFFFFF !important;
+    color: #1A1A1A !important;
+    border: 2px solid #A67C52 !important;
+    border-radius: 12px !important;
 }
+
+
 
 .stButton > button {
     background-color: #A67C52;
@@ -65,14 +77,7 @@ p, label, div {
     transform: translateY(-2px);
 }
 
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(
-        135deg,
-        #F8F4EE 0%,
-        #F1E7D8 50%,
-        #EFE6D8 100%
-    );
-}
+
 
 h1, h2, h3 {
     color: #2C3E50;
@@ -89,14 +94,7 @@ p, label, div {
     transform: translateY(-2px);
 }
 
-[data-testid="stTextArea"] textarea {
-    background: rgba(255,255,255,0.85) !important;
-    backdrop-filter: blur(10px);
-    border: 2px solid #D8C3A5 !important;
-    border-radius: 18px !important;
-    padding: 15px !important;
 
-}
 button[data-baseweb="tab"] {
     border-radius: 12px;
 }
@@ -142,6 +140,76 @@ st.markdown("""
 AI-powered emergency assessment, department routing,
 doctor workflow management, and patient analytics.
 """)
+def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_desc,
+                         duration, onset_type, severity_slider, conditions_str,
+                         severity, department, urgency, result):
+    pdf = FPDF()
+    pdf.add_page()
+
+    pdf.set_fill_color(166, 124, 82)
+    pdf.rect(0, 0, 210, 25, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_xy(10, 7)
+    pdf.cell(0, 10, "MediAgent AI - Patient Report", ln=True)
+
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_xy(10, 30)
+    pdf.cell(0, 6, f"Generated: {now_ist().strftime('%d-%m-%Y %H:%M')}", ln=True)
+
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Patient Details", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7,
+        f"Name: {patient_name}   |   Age: {age}   |   Gender: {gender}   |   Phone: {phone}")
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Symptom Intake", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7,
+        f"Body Area: {body_part}\n"
+        f"Description: {symptoms_desc}\n"
+        f"Duration: {duration}   |   Onset: {onset_type}   |   Pain Level: {severity_slider}/10\n"
+        f"Known Conditions: {conditions_str}"
+    )
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Triage Result", ln=True)
+
+    sev_colors = {"Critical": (231, 76, 60), "Moderate": (241, 196, 15), "Mild": (46, 204, 113)}
+    r, g, b = sev_colors.get(severity, (100, 100, 100))
+    pdf.set_fill_color(r, g, b)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(50, 8, f" Severity: {severity} ", fill=True, ln=False)
+    pdf.set_text_color(40, 40, 40)
+    pdf.cell(0, 8, f"   Department: {department}   |   Urgency: {urgency}/10", ln=True)
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "AI Assessment", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7, result['summary'])
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 8, "Recommended Actions", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    for i, action in enumerate(result["actions"], 1):
+        pdf.multi_cell(0, 7, f"{i}. {action}")
+
+    if result["warning"]:
+        pdf.ln(3)
+        pdf.set_fill_color(231, 76, 60)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.multi_cell(0, 8, f"EMERGENCY WARNING: {result['warning']}", fill=True)
+
+    return bytes(pdf.output())
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Patient Triage",
@@ -154,63 +222,10 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 # -------------------------
 # TAB 1 - TRIAGE
-
+# -------------------------
 with tab1:
     st.header("🩺 Patient Symptom Analysis")
-
-    # ── EMERGENCY SOS ─────────────────────────────────────────────
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, #c0392b, #e74c3c);
-        border-radius: 16px;
-        padding: 20px 24px;
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        box-shadow: 0 4px 20px rgba(231,76,60,0.3);
-    ">
-        <div>
-            <div style="color:white; font-size:20px; font-weight:800; margin-bottom:4px;">
-                🚨 Life-Threatening Emergency?
-            </div>
-            <div style="color:#FECACA; font-size:14px;">
-                If you or someone is in immediate danger - do not use this form
-            </div>
-        </div>
-        <div style="text-align:right;">
-            <div style="color:white; font-size:28px; font-weight:900;">📞 112</div>
-            <div style="color:#FECACA; font-size:12px;">India Emergency Helpline</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    sos_col1, sos_col2, sos_col3 = st.columns(3)
-    with sos_col1:
-        st.markdown("""
-        <div style="background:#FFF5F5; border:1px solid #FECACA; border-radius:12px; padding:12px; text-align:center; margin-bottom:16px;">
-            <div style="font-size:22px;">🚑</div>
-            <div style="font-weight:700; color:#c0392b; font-size:14px;">Ambulance</div>
-            <div style="font-size:18px; font-weight:800; color:#c0392b;">102</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with sos_col2:
-        st.markdown("""
-        <div style="background:#FFF5F5; border:1px solid #FECACA; border-radius:12px; padding:12px; text-align:center; margin-bottom:16px;">
-            <div style="font-size:22px;">🏥</div>
-            <div style="font-weight:700; color:#c0392b; font-size:14px;">Emergency</div>
-            <div style="font-size:18px; font-weight:800; color:#c0392b;">108</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with sos_col3:
-        st.markdown("""
-        <div style="background:#FFF5F5; border:1px solid #FECACA; border-radius:12px; padding:12px; text-align:center; margin-bottom:16px;">
-            <div style="font-size:22px;">👮</div>
-            <div style="font-weight:700; color:#c0392b; font-size:14px;">Police</div>
-            <div style="font-size:18px; font-weight:800; color:#c0392b;">100</div>
-        </div>
-        """, unsafe_allow_html=True)
-
+ 
     # ── Section 1: Patient Info ───────────────────────────────────
     st.markdown("#### 👤 Patient Information")
     col1, col2 = st.columns(2)
@@ -436,7 +451,7 @@ Allergies: {allergies.strip() or "None reported"}
 **AI Assessment:** {result['summary']}
                 """)
  
-                st.caption(f"🕒 Analysis generated on {datetime.now().strftime('%d-%m-%Y %H:%M')}")
+                st.caption(f"🕒 Analysis generated on {now_ist().strftime('%d-%m-%Y %H:%M')}")
  
                 # ── Recommended actions ───────────────────────────
                 st.subheader("📋 Recommended Actions")
@@ -448,6 +463,7 @@ Allergies: {allergies.strip() or "None reported"}
                     st.error(f"⚠️ **When to go to Emergency immediately:** {result['warning']}")
  
                 # ── Save to DB ────────────────────────────────────
+                 
                 save_case_to_db(
                         symptoms=f"{body_part}: {symptoms_desc}",
                         severity=severity,
@@ -456,7 +472,7 @@ Allergies: {allergies.strip() or "None reported"}
  
                 # ── Download report ───────────────────────────────
                 report = f"""MediAgent AI — Patient Report
-Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}
+Generated: {now_ist().strftime('%d-%m-%Y %H:%M')}
  
 PATIENT DETAILS
 Name     : {patient_name}
@@ -490,10 +506,16 @@ RECOMMENDED ACTIONS
  
 {"EMERGENCY WARNING: " + result['warning'] if result['warning'] else ""}
 """
+                pdf_bytes = generate_pdf_report(
+                    patient_name, age, gender, phone, body_part, symptoms_desc,
+                    duration, onset_type, severity_slider, conditions_str,
+                    severity, department, urgency, result
+                )
                 st.download_button(
-                    "📄 Download Full Report",
-                    report,
-                    file_name=f"report_{patient_name.replace(' ', '_')}_{datetime.now().strftime('%d%m%Y')}.txt"
+                    "📄 Download PDF Report",
+                    pdf_bytes,
+                    file_name=f"report_{patient_name.replace(' ', '_')}_{now_ist().strftime('%d%m%Y')}.pdf",
+                    mime="application/pdf"
                 )
 
 # -------------------------
@@ -725,7 +747,7 @@ with tab4:
 
 # ── Drug checker LLM (reuses your Groq key) ──────────────────────
 _drug_llm = ChatGroq(
-    model="llama-3.1-8b-instant",
+    model="llama-3.3-70b-versatile",
     temperature=0.2,
     api_key=os.getenv("GROQ_API_KEY")
 )
@@ -755,39 +777,49 @@ _drug_chain = _drug_prompt | _drug_llm | StrOutputParser()
  
  
 def _query_openfda(drug1: str, drug2: str) -> dict:
-    # Use drug label endpoint for interaction warnings
-    base = "https://api.fda.gov/drug/label.json"
-    
+    """
+    Queries OpenFDA drug adverse events API for co-reported events.
+    No API key required.
+    Returns dict with found: bool, count: int, reactions: list, raw: dict
+    """
+    base = "https://api.fda.gov/drug/event.json"
+    query = f'patient.drug.medicinalproduct:"{drug1}" AND patient.drug.medicinalproduct:"{drug2}"'
+ 
     try:
         resp = requests.get(
             base,
-            params={
-                "search": f'drug_interactions:"{drug2.lower()}"&openfda.brand_name:"{drug1.lower()}"',
-                "limit": 3
-            },
+            params={"search": query, "limit": 5},
             timeout=8
         )
-        
+ 
         if resp.status_code == 200:
             data = resp.json()
-            total = data.get("meta", {}).get("results", {}).get("total", 0)
             results = data.get("results", [])
-            
-            interactions = []
-            for r in results:
-                di = r.get("drug_interactions", [])
-                if di:
-                    interactions.extend(di[:2])
-            
+            total   = data.get("meta", {}).get("results", {}).get("total", 0)
+ 
+            # Extract top reactions from results
+            reactions = set()
+            for result in results:
+                for rxn in result.get("patient", {}).get("reaction", []):
+                    rt = rxn.get("reactionmeddrapt", "")
+                    if rt:
+                        reactions.add(rt.title())
+ 
             return {
-                "found": total > 0,
-                "count": total,
-                "reactions": interactions[:5],
-                "raw": data,
+                "found":     total > 0,
+                "count":     total,
+                "reactions": list(reactions)[:10],
+                "raw":       data,
             }
-        
-        return {"found": False, "count": 0, "reactions": [], "raw": {}}
-        
+ 
+        elif resp.status_code == 404:
+            return {"found": False, "count": 0, "reactions": [], "raw": {}}
+ 
+        else:
+            return {"found": False, "count": 0, "reactions": [], "raw": {}, "error": f"API status {resp.status_code}"}
+ 
+    except requests.exceptions.Timeout:
+        return {"found": False, "count": 0, "reactions": [], "raw": {}, "error": "OpenFDA API timed out"}
     except Exception as e:
         return {"found": False, "count": 0, "reactions": [], "raw": {}, "error": str(e)}
  
@@ -800,7 +832,6 @@ def _parse_drug_field(text: str, field: str) -> str:
  
  
 # ── TAB 5 ─────────────────────────────────────────────────────────
- 
 with tab5:
     st.header("💊 Drug Interaction Checker")
     st.markdown(
@@ -809,54 +840,70 @@ with tab5:
         "Zero AI hallucinations on interaction data."
     )
     st.caption("ℹ️ Source: U.S. Food & Drug Administration (api.fda.gov) · No API key required")
-
+ 
     st.divider()
-
+ 
     d_col1, d_col2 = st.columns(2)
+ 
     with d_col1:
-        drug1 = st.text_input("💊 Drug 1",
-            value=st.session_state.get("drug1", ""),
-            key="drug1_input",
-            placeholder="e.g. Aspirin")
+        drug1 = st.text_input(
+            "💊 Drug 1",
+            placeholder="e.g. Aspirin",
+        )
+ 
     with d_col2:
-        drug2 = st.text_input("💊 Drug 2",
-            value=st.session_state.get("drug2", ""),
-            key="drug2_input",
-            placeholder="e.g. Warfarin")
-
+        drug2 = st.text_input(
+            "💊 Drug 2",
+            placeholder="e.g. Warfarin",
+        )
+ 
+    # Quick example buttons
     st.markdown("**Quick examples:**")
     ex_col1, ex_col2, ex_col3, ex_col4 = st.columns(4)
+ 
     if ex_col1.button("Aspirin + Warfarin"):
-        st.session_state["drug1"] = "Aspirin"
-        st.session_state["drug2"] = "Warfarin"
+        st.session_state["d1"] = "Aspirin"
+        st.session_state["d2"] = "Warfarin"
         st.rerun()
     if ex_col2.button("Metformin + Ibuprofen"):
-        st.session_state["drug1"] = "Metformin"
-        st.session_state["drug2"] = "Ibuprofen"
+        st.session_state["d1"] = "Metformin"
+        st.session_state["d2"] = "Ibuprofen"
         st.rerun()
     if ex_col3.button("Lisinopril + Potassium"):
-        st.session_state["drug1"] = "Lisinopril"
-        st.session_state["drug2"] = "Potassium"
+        st.session_state["d1"] = "Lisinopril"
+        st.session_state["d2"] = "Potassium"
         st.rerun()
     if ex_col4.button("Sertraline + Tramadol"):
-        st.session_state["drug1"] = "Sertraline"
-        st.session_state["drug2"] = "Tramadol"
+        st.session_state["d1"] = "Sertraline"
+        st.session_state["d2"] = "Tramadol"
         st.rerun()
-
+ 
+    # Apply session state if set by quick buttons
+    if "d1" in st.session_state and not drug1:
+        drug1 = st.session_state["d1"]
+    if "d2" in st.session_state and not drug2:
+        drug2 = st.session_state["d2"]
+ 
     st.divider()
-
+ 
     if st.button("🔍 Check Interaction", use_container_width=True):
+ 
         if not drug1.strip() or not drug2.strip():
             st.warning("Please enter both drug names.")
+ 
         elif drug1.strip().lower() == drug2.strip().lower():
             st.warning("Please enter two different drug names.")
+ 
         else:
             with st.spinner(f"Querying OpenFDA for {drug1} + {drug2}..."):
                 fda_result = _query_openfda(drug1.strip(), drug2.strip())
-
+ 
+            # ── API error ─────────────────────────────────────────
             if "error" in fda_result:
                 st.error(f"OpenFDA API error: {fda_result['error']}")
+ 
             else:
+                # ── Build FDA summary for LLM ─────────────────────
                 if fda_result["found"]:
                     fda_summary = (
                         f"Found {fda_result['count']:,} adverse event reports "
@@ -865,20 +912,23 @@ with tab5:
                     )
                 else:
                     fda_summary = f"No adverse event co-reports found in OpenFDA for {drug1} and {drug2}."
-
+ 
+                # ── LLM explanation ───────────────────────────────
                 with st.spinner("Generating clinical explanation..."):
                     llm_output = _drug_chain.invoke({
                         "drug1":    drug1.strip(),
                         "drug2":    drug2.strip(),
                         "fda_data": fda_summary,
                     })
-
-                severity_label = _parse_drug_field(llm_output, "SEVERITY")
-                plain_summary  = _parse_drug_field(llm_output, "PLAIN_SUMMARY")
-                mechanism      = _parse_drug_field(llm_output, "MECHANISM")
-                patient_advice = _parse_drug_field(llm_output, "PATIENT_ADVICE")
-
+ 
+                severity_label  = _parse_drug_field(llm_output, "SEVERITY")
+                plain_summary   = _parse_drug_field(llm_output, "PLAIN_SUMMARY")
+                mechanism       = _parse_drug_field(llm_output, "MECHANISM")
+                patient_advice  = _parse_drug_field(llm_output, "PATIENT_ADVICE")
+ 
+                # ── Severity badge ────────────────────────────────
                 st.markdown("### 📊 Interaction Result")
+ 
                 sev_lower = severity_label.lower()
                 if "major" in sev_lower:
                     st.error(f"🔴 **Severity: {severity_label}** — Significant risk. Consult your doctor immediately.")
@@ -888,26 +938,35 @@ with tab5:
                     st.success(f"🟢 **Severity: {severity_label}** — Low risk. Monitor for any unusual symptoms.")
                 else:
                     st.info(f"⚪ **Severity: {severity_label}** — Insufficient data to assess risk.")
-
+ 
+                # ── FDA data card ─────────────────────────────────
                 st.markdown(f"**OpenFDA Reports Found:** {fda_result['count']:,}")
                 if fda_result["reactions"]:
-                    st.markdown("**Interaction Warnings from FDA Label:**")
-                    for rxn in fda_result["reactions"][:2]:
-                        st.warning(rxn[:300] + "..." if len(rxn) > 300 else rxn)
-
+                    st.markdown("**Top Reported Adverse Reactions:**")
+                    rxn_cols = st.columns(min(len(fda_result["reactions"]), 5))
+                    for i, rxn in enumerate(fda_result["reactions"][:5]):
+                        rxn_cols[i % 5].markdown(f"• {rxn}")
+ 
                 st.divider()
+ 
+                # ── Clinical explanation ──────────────────────────
                 ic1, ic2 = st.columns(2)
+ 
                 with ic1:
                     st.markdown("**📝 Plain English Summary**")
                     st.info(plain_summary or "Not available.")
+ 
                     st.markdown("**🔬 Mechanism**")
                     st.info(mechanism or "Not available.")
+ 
                 with ic2:
                     st.markdown("**✅ What You Should Do**")
                     st.warning(patient_advice or "Consult your doctor or pharmacist.")
+ 
                     st.markdown("**💊 Drug Pair Checked**")
                     st.code(f"{drug1.strip()}  +  {drug2.strip()}", language=None)
-
+ 
+                # ── Source attribution ────────────────────────────
                 st.divider()
                 st.caption(
                     "📌 Interaction data sourced from OpenFDA Adverse Event Reporting System (FAERS). "
