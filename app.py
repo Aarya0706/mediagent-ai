@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 import re
-
+from fpdf.enums import WrapMode
 import sys
 import os
 from zoneinfo import ZoneInfo
@@ -135,7 +135,8 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
     pdf.cell(0, 8, "Patient Details", ln=True)
     pdf.set_font("Helvetica", "", 11)
     pdf.multi_cell(0, 7, clean_text_for_pdf(
-        f"Name: {patient_name}   |   Age: {age}   |   Gender: {gender}   |   Phone: {phone}"))
+        f"Name: {patient_name}   |   Age: {age}   |   Gender: {gender}   |   Phone: {phone}"),
+        wrapmode=WrapMode.CHAR)
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "Symptom Intake", ln=True)
@@ -144,7 +145,8 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
         f"Body Area: {body_part}\n"
         f"Description: {symptoms_desc}\n"
         f"Duration: {duration}   |   Onset: {onset_type}   |   Pain Level: {severity_slider}/10\n"
-        f"Known Conditions: {conditions_str}"))
+        f"Known Conditions: {conditions_str}"),
+        wrapmode=WrapMode.CHAR)
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "Triage Result", ln=True)
@@ -160,19 +162,20 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "AI Assessment", ln=True)
     pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 7, clean_text_for_pdf(result['summary']))
+    pdf.multi_cell(0, 7, clean_text_for_pdf(result['summary']), wrapmode=WrapMode.CHAR)
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "Recommended Actions", ln=True)
     pdf.set_font("Helvetica", "", 11)
     for i, action in enumerate(result["actions"], 1):
-        pdf.multi_cell(0, 7, clean_text_for_pdf(f"{i}. {action}"))
+        pdf.multi_cell(0, 7, clean_text_for_pdf(f"{i}. {action}"), wrapmode=WrapMode.CHAR)
     if result["warning"]:
         pdf.ln(3)
         pdf.set_fill_color(231, 76, 60)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.multi_cell(0, 8, clean_text_for_pdf(f"EMERGENCY WARNING: {result['warning']}"), fill=True)
+        pdf.multi_cell(0, 8, clean_text_for_pdf(f"EMERGENCY WARNING: {result['warning']}"),
+                        fill=True, wrapmode=WrapMode.CHAR)
     return bytes(pdf.output())
 
 
