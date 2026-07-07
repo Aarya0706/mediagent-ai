@@ -153,7 +153,7 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
     pdf.set_font("Helvetica", "", 11)
     for i, action in enumerate(result["actions"], 1):
         pdf.multi_cell(0, 7, clean_text_for_pdf(f"{i}. {action}"), wrapmode=WrapMode.CHAR)
-    if result["warning"]:
+    if result.get("warning"):
         pdf.ln(3)
         pdf.set_fill_color(231, 76, 60)
         pdf.set_text_color(255, 255, 255)
@@ -346,8 +346,9 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
                 for i, action in enumerate(result["actions"], 1):
                     st.markdown(f"{i}. {action}")
 
-                if result["warning"]:
-                    st.error(f"⚠️ **When to go to Emergency immediately:** {result['warning']}")
+                warning = result.get("warning")
+                if warning:
+                    st.error(f"⚠️ **When to go to Emergency immediately:** {warning}")
 
                 save_case_to_db(
                     symptoms=f"{body_part}: {symptoms_desc}",
