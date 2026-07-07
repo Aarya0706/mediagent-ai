@@ -83,36 +83,20 @@ AI-powered emergency assessment, department routing, doctor workflow management,
 
  
 
-def clean_text_for_pdf(text, max_word_len=40):
-    """Strip/replace characters that fpdf's core (Helvetica) font can't render,
-    and break up unbroken long words that would overflow the page width."""
-    if not isinstance(text, str):
-        text = str(text)
+def clean_text_for_pdf(text):
+    if not text:
+        return ""
     replacements = {
         "\u2018": "'", "\u2019": "'",
         "\u201c": '"', "\u201d": '"',
         "\u2013": "-", "\u2014": "-",
         "\u2026": "...",
-        "\u2022": "- ",                 # bullet -> dash + space (avoids merging words)
-        "\u2192": " -> ",               # arrow -> with spaces
-        "\u00a0": " ",
-        "\u00b0": " deg",
+        "\u2022": "-",
     }
     for bad, good in replacements.items():
         text = text.replace(bad, good)
-
-    # Drop remaining non-Latin-1 characters (emojis etc.)
-    text = text.encode("latin-1", "ignore").decode("latin-1")
-
-    # Force-break any "word" longer than max_word_len (URLs, run-on tokens, etc.)
-    # so fpdf's word-wrap has somewhere to break the line.
-    def _break(match):
-        word = match.group(0)
-        return " ".join(word[i:i + max_word_len] for i in range(0, len(word), max_word_len))
-
-    text = re.sub(r"\S{%d,}" % (max_word_len + 1), _break, text)
-
-    return text
+    # Strip anything else outside Latin-1 range
+    return text.encode("latin-1", "ignore").decode("latin-1")
 
 
 def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_desc,
@@ -297,12 +281,10 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
             status.markdown("🔍 **Agent 1/3:** Validating and normalising intake...")
             progress_bar.progress(10)
             
-            st.write("Calling pipeline...")
+             
 
             result = run_triage_pipeline(symptoms, patient_context)
-
-            st.write("Pipeline finished")
-            st.write(result)
+  
 
             progress_bar.progress(70)
             status.markdown("📋 **Agent 3/3:** Generating recommendations...")
