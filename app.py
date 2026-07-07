@@ -10,6 +10,8 @@ import plotly.express as px
 from datetime import datetime
 from fpdf import FPDF
 
+import re
+
 import sys
 import os
 from zoneinfo import ZoneInfo
@@ -79,25 +81,38 @@ st.markdown("""
 AI-powered emergency assessment, department routing, doctor workflow management, and patient analytics.
 """)
 
+ 
 
-def clean_text_for_pdf(text):
-    """Strip/replace characters that fpdf's core (Helvetica) font can't render."""
+def clean_text_for_pdf(text, max_word_len=40):
+    """Strip/replace characters that fpdf's core (Helvetica) font can't render,
+    and break up unbroken long words that would overflow the page width."""
     if not isinstance(text, str):
         text = str(text)
     replacements = {
-        "\u2018": "'", "\u2019": "'",   # curly single quotes
-        "\u201c": '"', "\u201d": '"',   # curly double quotes
-        "\u2013": "-", "\u2014": "-",   # en/em dash
-        "\u2026": "...",                # ellipsis
-        "\u2022": "-",                  # bullet
-        "\u2192": "->",                 # arrow
-        "\u00a0": " ",                  # non-breaking space
-        "\u00b0": " deg",               # degree sign
+        "\u2018": "'", "\u2019": "'",
+        "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "-",
+        "\u2026": "...",
+        "\u2022": "- ",                 # bullet -> dash + space (avoids merging words)
+        "\u2192": " -> ",               # arrow -> with spaces
+        "\u00a0": " ",
+        "\u00b0": " deg",
     }
     for bad, good in replacements.items():
         text = text.replace(bad, good)
-    # Drop any remaining character outside Latin-1 (emojis, other Unicode)
-    return text.encode("latin-1", "ignore").decode("latin-1")
+
+    # Drop remaining non-Latin-1 characters (emojis etc.)
+    text = text.encode("latin-1", "ignore").decode("latin-1")
+
+    # Force-break any "word" longer than max_word_len (URLs, run-on tokens, etc.)
+    # so fpdf's word-wrap has somewhere to break the line.
+    def _break(match):
+        word = match.group(0)
+        return " ".join(word[i:i + max_word_len] for i in range(0, len(word), max_word_len))
+
+    text = re.sub(r"\S{%d,}" % (max_word_len + 1), _break, text)
+
+    return text
 
 
 def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_desc,
