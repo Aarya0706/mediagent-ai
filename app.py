@@ -42,7 +42,7 @@ st.markdown("""
 [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #F8F4EE 0%, #F1E7D8 50%, #EFE6D8 100%);
 }
-h1, h2, h3 { color: #2C3E50; }
+h1, h2, h3, h4 { color: #2C3E50; }
 p, label, div { color: #34495E; }
 [data-testid="stTextArea"] textarea {
     background-color: #FFFFFF !important;
