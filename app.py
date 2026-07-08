@@ -83,7 +83,7 @@ AI-powered emergency assessment, department routing, doctor workflow management,
 
  
 
-def clean_text_for_pdf(text):
+def clean_text_for_pdf(text, max_word_len=40):
     if not text:
         return ""
     replacements = {
@@ -95,8 +95,16 @@ def clean_text_for_pdf(text):
     }
     for bad, good in replacements.items():
         text = text.replace(bad, good)
-    # Strip anything else outside Latin-1 range
-    return text.encode("latin-1", "ignore").decode("latin-1")
+    text = text.encode("latin-1", "ignore").decode("latin-1")
+    # Break up any unbroken "word" too long for multi_cell to wrap (prevents fpdf2 crash)
+    words = text.split(" ")
+    safe_words = []
+    for w in words:
+        if len(w) > max_word_len:
+            safe_words.append(" ".join(w[i:i+max_word_len] for i in range(0, len(w), max_word_len)))
+        else:
+            safe_words.append(w)
+    return " ".join(safe_words)
 
 
 def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_desc,
@@ -151,7 +159,7 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "Recommended Actions", ln=True)
     pdf.set_font("Helvetica", "", 11)
-    for i, action in enumerate(result["actions"], 1):
+    for i, action in enumerate(result.get("actions", []), 1):
         pdf.multi_cell(0, 7, clean_text_for_pdf(f"{i}. {action}"), wrapmode=WrapMode.CHAR)
     if result.get("warning"):
         pdf.ln(3)
@@ -343,30 +351,36 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
                 st.caption(f"🕒 Analysis generated on {now_ist().strftime('%d-%m-%Y %H:%M')} IST")
 
                 st.subheader("📋 Recommended Actions")
-                for i, action in enumerate(result["actions"], 1):
+                for i, action in enumerate(result.get("actions", []), 1):
                     st.markdown(f"{i}. {action}")
 
                 warning = result.get("warning")
                 if warning:
                     st.error(f"⚠️ **When to go to Emergency immediately:** {warning}")
 
-                save_case_to_db(
-                    symptoms=f"{body_part}: {symptoms_desc}",
-                    severity=severity,
-                    department=department
-                )
+                try:
+                    save_case_to_db(
+                        symptoms=f"{body_part}: {symptoms_desc}",
+                        severity=severity,
+                        department=department
+                    )
+                except Exception as e:
+                    st.warning(f"Case could not be saved to history: {e}")
 
-                pdf_bytes = generate_pdf_report(
-                    patient_name, age, gender, phone, body_part, symptoms_desc,
-                    duration, onset_type, severity_slider, conditions_str,
-                    severity, department, urgency, result
-                )
-                st.download_button(
-                    "📄 Download PDF Report",
-                    pdf_bytes,
-                    file_name=f"report_{patient_name.replace(' ', '_')}_{now_ist().strftime('%d%m%Y')}.pdf",
-                    mime="application/pdf"
-                )
+                try:
+                    pdf_bytes = generate_pdf_report(
+                        patient_name, age, gender, phone, body_part, symptoms_desc,
+                        duration, onset_type, severity_slider, conditions_str,
+                        severity, department, urgency, result
+                    )
+                    st.download_button(
+                        "📄 Download PDF Report",
+                        pdf_bytes,
+                        file_name=f"report_{patient_name.replace(' ', '_') or 'patient'}_{now_ist().strftime('%d%m%Y')}.pdf",
+                        mime="application/pdf"
+                    )
+                except Exception as e:
+                    st.error(f"PDF generation failed: {e}")
 
 # ── TAB 2 ─────────────────────────────────────────────────────────
 with tab2:
