@@ -289,7 +289,7 @@ with tab1:
 
     st.divider()
 
-    if st.button("🔍 Analyze Symptoms", width='stretch'):
+    if st.button("🔍 Analyze Symptoms", use_container_width=True):
         if body_part == "Select...":
             st.warning("Please select the body part affected.")
         elif not symptoms_desc.strip():
@@ -589,26 +589,26 @@ with tab5:
 
     st.markdown("**Quick examples:**")
     ex_col1, ex_col2, ex_col3, ex_col4 = st.columns(4)
-    if ex_col1.button("Aspirin + Warfarin"):
+    if ex_col1.button("Aspirin + Warfarin", use_container_width=True):
         st.session_state["drug1"] = "Aspirin"
         st.session_state["drug2"] = "Warfarin"
         st.rerun()
-    if ex_col2.button("Metformin + Ibuprofen"):
+    if ex_col2.button("Metformin + Ibuprofen", use_container_width=True):
         st.session_state["drug1"] = "Metformin"
         st.session_state["drug2"] = "Ibuprofen"
         st.rerun()
-    if ex_col3.button("Lisinopril + Potassium"):
+    if ex_col3.button("Lisinopril + Potassium", use_container_width=True):
         st.session_state["drug1"] = "Lisinopril"
         st.session_state["drug2"] = "Potassium"
         st.rerun()
-    if ex_col4.button("Sertraline + Tramadol"):
+    if ex_col4.button("Sertraline + Tramadol", use_container_width=True):
         st.session_state["drug1"] = "Sertraline"
         st.session_state["drug2"] = "Tramadol"
         st.rerun()
 
     st.divider()
 
-    if st.button("🔍 Check Interaction", width='stretch'):
+    if st.button("🔍 Check Interaction", use_container_width=True):
         if not drug1.strip() or not drug2.strip():
             st.warning("Please enter both drug names.")
         elif drug1.strip().lower() == drug2.strip().lower():
