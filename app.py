@@ -9,17 +9,18 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from fpdf import FPDF
+from fpdf.enums import WrapMode, XPos, YPos
 
-import re
-from fpdf.enums import WrapMode
 import sys
 import os
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 
+
 def now_ist():
     return datetime.now(IST)
+
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
@@ -81,27 +82,38 @@ st.markdown("""
 AI-powered emergency assessment, department routing, doctor workflow management, and patient analytics.
 """)
 
- 
+
+# ── PDF helpers ──────────────────────────────────────────────────
 
 def clean_text_for_pdf(text, max_word_len=40):
+    """Strip/replace characters that fpdf's core (Helvetica) font can't render,
+    and break up unbroken long tokens so multi_cell can always wrap them."""
     if not text:
         return ""
+    if not isinstance(text, str):
+        text = str(text)
     replacements = {
         "\u2018": "'", "\u2019": "'",
         "\u201c": '"', "\u201d": '"',
         "\u2013": "-", "\u2014": "-",
         "\u2026": "...",
-        "\u2022": "-",
+        "\u2022": "- ",
+        "\u2192": " -> ",
+        "\u00a0": " ",
+        "\u00b0": " deg",
     }
     for bad, good in replacements.items():
         text = text.replace(bad, good)
+
+    # Drop any remaining character outside Latin-1 (emojis, other Unicode)
     text = text.encode("latin-1", "ignore").decode("latin-1")
-    # Break up any unbroken "word" too long for multi_cell to wrap (prevents fpdf2 crash)
+
+    # Force-break any "word" longer than max_word_len so it never overflows the page width
     words = text.split(" ")
     safe_words = []
     for w in words:
         if len(w) > max_word_len:
-            safe_words.append(" ".join(w[i:i+max_word_len] for i in range(0, len(w), max_word_len)))
+            safe_words.append(" ".join(w[i:i + max_word_len] for i in range(0, len(w), max_word_len)))
         else:
             safe_words.append(w)
     return " ".join(safe_words)
@@ -117,21 +129,24 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_xy(10, 7)
-    pdf.cell(0, 10, "MediAgent AI - Patient Report", ln=True)
+    pdf.cell(0, 10, "MediAgent AI - Patient Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_text_color(40, 40, 40)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_xy(10, 30)
-    pdf.cell(0, 6, clean_text_for_pdf(f"Generated: {now_ist().strftime('%d-%m-%Y %H:%M')} IST"), ln=True)
+    pdf.cell(0, 6, clean_text_for_pdf(f"Generated: {now_ist().strftime('%d-%m-%Y %H:%M')} IST"),
+              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
+
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Patient Details", ln=True)
+    pdf.cell(0, 8, "Patient Details", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
     pdf.multi_cell(0, 7, clean_text_for_pdf(
         f"Name: {patient_name}   |   Age: {age}   |   Gender: {gender}   |   Phone: {phone}"),
         wrapmode=WrapMode.CHAR)
     pdf.ln(3)
+
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Symptom Intake", ln=True)
+    pdf.cell(0, 8, "Symptom Intake", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
     pdf.multi_cell(0, 7, clean_text_for_pdf(
         f"Body Area: {body_part}\n"
@@ -140,27 +155,33 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
         f"Known Conditions: {conditions_str}"),
         wrapmode=WrapMode.CHAR)
     pdf.ln(3)
+
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Triage Result", ln=True)
+    pdf.cell(0, 8, "Triage Result", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     sev_colors = {"Critical": (231, 76, 60), "Moderate": (241, 196, 15), "Mild": (46, 204, 113)}
     r, g, b = sev_colors.get(severity, (100, 100, 100))
     pdf.set_fill_color(r, g, b)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(50, 8, clean_text_for_pdf(f" Severity: {severity} "), fill=True, ln=False)
+    pdf.cell(50, 8, clean_text_for_pdf(f" Severity: {severity} "), fill=True,
+              new_x=XPos.RIGHT, new_y=YPos.TOP)
     pdf.set_text_color(40, 40, 40)
-    pdf.cell(0, 8, clean_text_for_pdf(f"   Department: {department}   |   Urgency: {urgency}/10"), ln=True)
+    pdf.cell(0, 8, clean_text_for_pdf(f"   Department: {department}   |   Urgency: {urgency}/10"),
+              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
+
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "AI Assessment", ln=True)
+    pdf.cell(0, 8, "AI Assessment", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 7, clean_text_for_pdf(result['summary']), wrapmode=WrapMode.CHAR)
+    pdf.multi_cell(0, 7, clean_text_for_pdf(result.get('summary', '')), wrapmode=WrapMode.CHAR)
     pdf.ln(3)
+
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Recommended Actions", ln=True)
+    pdf.cell(0, 8, "Recommended Actions", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
     for i, action in enumerate(result.get("actions", []), 1):
         pdf.multi_cell(0, 7, clean_text_for_pdf(f"{i}. {action}"), wrapmode=WrapMode.CHAR)
+
     if result.get("warning"):
         pdf.ln(3)
         pdf.set_fill_color(231, 76, 60)
@@ -168,6 +189,7 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
         pdf.set_font("Helvetica", "B", 11)
         pdf.multi_cell(0, 8, clean_text_for_pdf(f"EMERGENCY WARNING: {result['warning']}"),
                         fill=True, wrapmode=WrapMode.CHAR)
+
     return bytes(pdf.output())
 
 
@@ -267,7 +289,7 @@ with tab1:
 
     st.divider()
 
-    if st.button("🔍 Analyze Symptoms", use_container_width=True):
+    if st.button("🔍 Analyze Symptoms", width='stretch'):
         if body_part == "Select...":
             st.warning("Please select the body part affected.")
         elif not symptoms_desc.strip():
@@ -288,56 +310,61 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
             status = st.empty()
             status.markdown("🔍 **Agent 1/3:** Validating and normalising intake...")
             progress_bar.progress(10)
-            
-             
 
-            result = run_triage_pipeline(symptoms, patient_context)
-  
+            try:
+                result = run_triage_pipeline(symptoms, patient_context)
+            except Exception as e:
+                progress_bar.empty()
+                status.empty()
+                st.error("The triage pipeline failed to run.")
+                st.exception(e)
+                result = None
 
-            progress_bar.progress(70)
-            status.markdown("📋 **Agent 3/3:** Generating recommendations...")
-            time.sleep(0.3)
-            progress_bar.progress(100)
-            time.sleep(0.2)
-            progress_bar.empty()
-            status.empty()
+            if result is not None:
+                progress_bar.progress(70)
+                status.markdown("📋 **Agent 3/3:** Generating recommendations...")
+                time.sleep(0.3)
+                progress_bar.progress(100)
+                time.sleep(0.2)
+                progress_bar.empty()
+                status.empty()
 
-            if not result["valid"]:
-                st.error(f"Could not process input: {result['invalid_reason']}")
-                st.info("Please describe your symptoms more specifically.")
-            else:
-                severity = result["severity"]
-                department = result["department"]
-                urgency = result["urgency_score"]
+                if not result.get("valid"):
+                    st.error(f"Could not process input: {result.get('invalid_reason', 'Unknown reason')}")
+                    st.info("Please describe your symptoms more specifically.")
+                else:
+                    severity = result["severity"]
+                    department = result["department"]
+                    urgency = result["urgency_score"]
 
-                st.markdown("---")
-                st.markdown("### 📊 Assessment Results")
-                res_col1, res_col2, res_col3 = st.columns(3)
-                with res_col1:
+                    st.markdown("---")
+                    st.markdown("### 📊 Assessment Results")
+                    res_col1, res_col2, res_col3 = st.columns(3)
+                    with res_col1:
+                        if severity == "Critical":
+                            st.error(f"🔴 **{severity}**")
+                        elif severity == "Moderate":
+                            st.warning(f"🟡 **{severity}**")
+                        else:
+                            st.success(f"🟢 **{severity}**")
+                        st.caption("Severity Level")
+                    with res_col2:
+                        st.info(f"🏥 **{department}**")
+                        st.caption("Recommended Department")
+                    with res_col3:
+                        st.metric("Urgency Score", f"{urgency} / 10")
+
+                    st.progress(urgency / 10)
                     if severity == "Critical":
-                        st.error(f"🔴 **{severity}**")
-                    elif severity == "Moderate":
-                        st.warning(f"🟡 **{severity}**")
-                    else:
-                        st.success(f"🟢 **{severity}**")
-                    st.caption("Severity Level")
-                with res_col2:
-                    st.info(f"🏥 **{department}**")
-                    st.caption("Recommended Department")
-                with res_col3:
-                    st.metric("Urgency Score", f"{urgency} / 10")
+                        st.error("🚨 IMMEDIATE MEDICAL ATTENTION REQUIRED - Go to Emergency now")
 
-                st.progress(urgency / 10)
-                if severity == "Critical":
-                    st.error("🚨 IMMEDIATE MEDICAL ATTENTION REQUIRED - Go to Emergency now")
+                    with st.expander("🧠 View AI Triage Reasoning"):
+                        st.info(result.get("triage_reasoning", ""))
+                        st.caption("Structured Intake Sent to Triage Agent:")
+                        st.code(result.get("intake", ""), language=None)
 
-                with st.expander("🧠 View AI Triage Reasoning"):
-                    st.info(result["triage_reasoning"])
-                    st.caption("Structured Intake Sent to Triage Agent:")
-                    st.code(result["intake"], language=None)
-
-                st.subheader("🩺 Patient Summary")
-                st.info(f"""
+                    st.subheader("🩺 Patient Summary")
+                    st.info(f"""
 **Patient:** {patient_name}  |  **Age:** {age}  |  **Gender:** {gender}  |  **Phone:** {phone}
 
 **Body Area:** {body_part}  |  **Duration:** {duration}  |  **Pain Level:** {severity_slider}/10  |  **Onset:** {onset_type}
@@ -346,72 +373,74 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
 
 **Known Conditions:** {conditions_str}
 
-**AI Assessment:** {result['summary']}
-                """)
-                st.caption(f"🕒 Analysis generated on {now_ist().strftime('%d-%m-%Y %H:%M')} IST")
+**AI Assessment:** {result.get('summary', '')}
+                    """)
+                    st.caption(f"🕒 Analysis generated on {now_ist().strftime('%d-%m-%Y %H:%M')} IST")
 
-                st.subheader("📋 Recommended Actions")
-                for i, action in enumerate(result.get("actions", []), 1):
-                    st.markdown(f"{i}. {action}")
+                    st.subheader("📋 Recommended Actions")
+                    for i, action in enumerate(result.get("actions", []), 1):
+                        st.markdown(f"{i}. {action}")
 
-                warning = result.get("warning")
-                if warning:
-                    st.error(f"⚠️ **When to go to Emergency immediately:** {warning}")
+                    warning = result.get("warning")
+                    if warning:
+                        st.error(f"⚠️ **When to go to Emergency immediately:** {warning}")
 
-                try:
-                    save_case_to_db(
-                        symptoms=f"{body_part}: {symptoms_desc}",
-                        severity=severity,
-                        department=department
-                    )
-                except Exception as e:
-                    st.warning(f"Case could not be saved to history: {e}")
+                    try:
+                        save_case_to_db(
+                            symptoms=f"{body_part}: {symptoms_desc}",
+                            severity=severity,
+                            department=department
+                        )
+                    except Exception as e:
+                        st.warning(f"Case could not be saved to history: {e}")
 
-                try:
-                    pdf_bytes = generate_pdf_report(
-                        patient_name, age, gender, phone, body_part, symptoms_desc,
-                        duration, onset_type, severity_slider, conditions_str,
-                        severity, department, urgency, result
-                    )
-                    st.download_button(
-                        "📄 Download PDF Report",
-                        pdf_bytes,
-                        file_name=f"report_{patient_name.replace(' ', '_') or 'patient'}_{now_ist().strftime('%d%m%Y')}.pdf",
-                        mime="application/pdf"
-                    )
-                except Exception as e:
-                    st.error(f"PDF generation failed: {e}")
+                    try:
+                        pdf_bytes = generate_pdf_report(
+                            patient_name, age, gender, phone, body_part, symptoms_desc,
+                            duration, onset_type, severity_slider, conditions_str,
+                            severity, department, urgency, result
+                        )
+                        st.download_button(
+                            "📄 Download PDF Report",
+                            pdf_bytes,
+                            file_name=f"report_{(patient_name or 'patient').replace(' ', '_')}_{now_ist().strftime('%d%m%Y')}.pdf",
+                            mime="application/pdf"
+                        )
+                    except Exception as e:
+                        st.error("PDF generation failed. See details below.")
+                        st.exception(e)
 
 # ── TAB 2 ─────────────────────────────────────────────────────────
 with tab2:
     st.header("📋 Patient Case History")
     if st.button("🗑 Clear All Cases"):
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM cases")
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM cases")
+            conn.commit()
         st.success("All case records deleted successfully!")
         st.rerun()
     try:
-        conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query("SELECT * FROM cases ORDER BY created_at DESC", conn)
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query("SELECT * FROM cases ORDER BY created_at DESC", conn)
         display_df = df[["symptoms", "severity", "department", "created_at"]].copy()
         display_df.columns = ["Symptoms", "Severity", "Department", "Date & Time"]
         display_df["Severity"] = display_df["Severity"].replace({
             "Critical": "🚨 Critical", "Moderate": "⚠️ Moderate",
             "Low": "✅ Low", "Mild": "✅ Mild"
         })
-        st.dataframe(display_df, use_container_width=True)
-        conn.close()
+        st.dataframe(display_df, width='stretch')
     except Exception as e:
         st.error(str(e))
 
 # ── TAB 3 ─────────────────────────────────────────────────────────
 with tab3:
     st.header("📊 Real-Time Hospital Analytics")
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * FROM cases", conn)
+    with sqlite3.connect(DB_PATH) as conn:
+        df = pd.read_sql_query("SELECT * FROM cases", conn)
+        dept_df = pd.read_sql_query("SELECT department, COUNT(*) as total FROM cases GROUP BY department", conn)
+        sev_df = pd.read_sql_query("SELECT severity, COUNT(*) as total FROM cases GROUP BY severity", conn)
+
     total_cases = len(df)
     critical_cases = len(df[df["severity"].str.contains("Critical", case=False, na=False)])
     moderate_cases = len(df[df["severity"].str.contains("Moderate", case=False, na=False)])
@@ -430,31 +459,28 @@ with tab3:
     with col4: st.metric("✅ Mild", mild_cases)
     with col5: st.metric("📊 Critical %", f"{critical_percent}%")
 
-    dept_df = pd.read_sql_query("SELECT department, COUNT(*) as total FROM cases GROUP BY department", conn)
     fig = px.bar(dept_df, x="department", y="total", text="total")
     fig.update_layout(paper_bgcolor="#F5EFE6", plot_bgcolor="#F5EFE6",
                       font=dict(color="#34495E", size=14),
                       xaxis=dict(title="Department", color="#34495E"),
                       yaxis=dict(title="Cases", color="#34495E"))
     fig.update_traces(marker_color="#B8874E", textposition="outside")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
-    sev_df = pd.read_sql_query("SELECT severity, COUNT(*) as total FROM cases GROUP BY severity", conn)
     st.subheader("Severity Distribution")
     fig2 = px.pie(sev_df, names="severity", values="total")
     fig2.update_layout(paper_bgcolor="#F5EFE6", plot_bgcolor="#F5EFE6", font=dict(color="#34495E", size=14))
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width='stretch')
     st.markdown("<div style='text-align:center;color:#8B7355;padding-top:20px;'>Designed & Developed by Aarya Shirsath</div>", unsafe_allow_html=True)
-    conn.close()
 
 # ── TAB 4 ─────────────────────────────────────────────────────────
 with tab4:
     st.header("👨‍⚕️ Doctor Portal")
-    conn = sqlite3.connect(DB_PATH)
-    doctor_df = pd.read_sql_query("""
-        SELECT * FROM cases
-        ORDER BY CASE WHEN severity='Critical' THEN 1 WHEN severity='Moderate' THEN 2 ELSE 3 END, created_at DESC
-    """, conn)
+    with sqlite3.connect(DB_PATH) as conn:
+        doctor_df = pd.read_sql_query("""
+            SELECT * FROM cases
+            ORDER BY CASE WHEN severity='Critical' THEN 1 WHEN severity='Moderate' THEN 2 ELSE 3 END, created_at DESC
+        """, conn)
     critical_count = len(doctor_df[doctor_df["severity"] == "Critical"])
     st.error(f"🚨 Critical Cases Pending: {critical_count}")
 
@@ -470,17 +496,21 @@ with tab4:
             return ["background-color: #DCEFD8; color: #1F5D2E"] * len(row)
 
     styled_df = display_df.style.apply(highlight_severity, axis=1)
-    st.dataframe(styled_df, use_container_width=True)
-    conn.close()
+    st.dataframe(styled_df, width='stretch')
     st.markdown("---")
     st.caption("🏥 MediAgent AI - Agentic Hospital Triage & Decision Support System")
 
-# ── Drug Checker LLM ──────────────────────────────────────────────
-_drug_llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.2,
-    api_key=os.getenv("GROQ_API_KEY")
-)
+# ── Drug Checker LLM (cached so it isn't rebuilt on every rerun) ──
+@st.cache_resource
+def get_drug_llm():
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=0.2,
+        api_key=os.getenv("GROQ_API_KEY")
+    )
+
+
+_drug_llm = get_drug_llm()
 
 _drug_prompt = ChatPromptTemplate.from_messages([
     ("system", """You are a clinical pharmacist explaining drug interactions to a patient in plain English.
@@ -578,7 +608,7 @@ with tab5:
 
     st.divider()
 
-    if st.button("🔍 Check Interaction", use_container_width=True):
+    if st.button("🔍 Check Interaction", width='stretch'):
         if not drug1.strip() or not drug2.strip():
             st.warning("Please enter both drug names.")
         elif drug1.strip().lower() == drug2.strip().lower():
@@ -599,51 +629,57 @@ with tab5:
                 else:
                     fda_summary = f"No interaction data found in OpenFDA for {drug1} and {drug2}."
 
-                with st.spinner("Generating clinical explanation..."):
-                    llm_output = _drug_chain.invoke({
-                        "drug1": drug1.strip(),
-                        "drug2": drug2.strip(),
-                        "fda_data": fda_summary,
-                    })
+                try:
+                    with st.spinner("Generating clinical explanation..."):
+                        llm_output = _drug_chain.invoke({
+                            "drug1": drug1.strip(),
+                            "drug2": drug2.strip(),
+                            "fda_data": fda_summary,
+                        })
+                except Exception as e:
+                    st.error("The clinical explanation could not be generated.")
+                    st.exception(e)
+                    llm_output = ""
 
-                severity_label = _parse_drug_field(llm_output, "SEVERITY")
-                plain_summary  = _parse_drug_field(llm_output, "PLAIN_SUMMARY")
-                mechanism      = _parse_drug_field(llm_output, "MECHANISM")
-                patient_advice = _parse_drug_field(llm_output, "PATIENT_ADVICE")
+                if llm_output:
+                    severity_label = _parse_drug_field(llm_output, "SEVERITY")
+                    plain_summary  = _parse_drug_field(llm_output, "PLAIN_SUMMARY")
+                    mechanism      = _parse_drug_field(llm_output, "MECHANISM")
+                    patient_advice = _parse_drug_field(llm_output, "PATIENT_ADVICE")
 
-                st.markdown("### 📊 Interaction Result")
-                sev_lower = severity_label.lower()
-                if "major" in sev_lower:
-                    st.error(f"🔴 **Severity: {severity_label}** - Significant risk. Consult your doctor immediately.")
-                elif "moderate" in sev_lower:
-                    st.warning(f"🟡 **Severity: {severity_label}** - Use with caution. Doctor consultation advised.")
-                elif "minor" in sev_lower:
-                    st.success(f"🟢 **Severity: {severity_label}** - Low risk. Monitor for any unusual symptoms.")
-                else:
-                    st.info(f"⚪ **Severity: {severity_label}** - Insufficient data to assess risk.")
+                    st.markdown("### 📊 Interaction Result")
+                    sev_lower = severity_label.lower()
+                    if "major" in sev_lower:
+                        st.error(f"🔴 **Severity: {severity_label}** - Significant risk. Consult your doctor immediately.")
+                    elif "moderate" in sev_lower:
+                        st.warning(f"🟡 **Severity: {severity_label}** - Use with caution. Doctor consultation advised.")
+                    elif "minor" in sev_lower:
+                        st.success(f"🟢 **Severity: {severity_label}** - Low risk. Monitor for any unusual symptoms.")
+                    else:
+                        st.info(f"⚪ **Severity: {severity_label}** - Insufficient data to assess risk.")
 
-                st.markdown(f"**OpenFDA Entries Found:** {fda_result['count']:,}")
-                if fda_result["reactions"]:
-                    st.markdown("**Interaction Warnings from FDA Label:**")
-                    for rxn in fda_result["reactions"][:2]:
-                        st.warning(rxn[:300] + "..." if len(rxn) > 300 else rxn)
+                    st.markdown(f"**OpenFDA Entries Found:** {fda_result['count']:,}")
+                    if fda_result["reactions"]:
+                        st.markdown("**Interaction Warnings from FDA Label:**")
+                        for rxn in fda_result["reactions"][:2]:
+                            st.warning(rxn[:300] + "..." if len(rxn) > 300 else rxn)
 
-                st.divider()
-                ic1, ic2 = st.columns(2)
-                with ic1:
-                    st.markdown("**📝 Plain English Summary**")
-                    st.info(plain_summary or "Not available.")
-                    st.markdown("**🔬 Mechanism**")
-                    st.info(mechanism or "Not available.")
-                with ic2:
-                    st.markdown("**✅ What You Should Do**")
-                    st.warning(patient_advice or "Consult your doctor or pharmacist.")
-                    st.markdown("**💊 Drug Pair Checked**")
-                    st.code(f"{drug1.strip()}  +  {drug2.strip()}", language=None)
+                    st.divider()
+                    ic1, ic2 = st.columns(2)
+                    with ic1:
+                        st.markdown("**📝 Plain English Summary**")
+                        st.info(plain_summary or "Not available.")
+                        st.markdown("**🔬 Mechanism**")
+                        st.info(mechanism or "Not available.")
+                    with ic2:
+                        st.markdown("**✅ What You Should Do**")
+                        st.warning(patient_advice or "Consult your doctor or pharmacist.")
+                        st.markdown("**💊 Drug Pair Checked**")
+                        st.code(f"{drug1.strip()}  +  {drug2.strip()}", language=None)
 
-                st.divider()
-                st.caption(
-                    "Interaction data sourced from OpenFDA. "
-                    "Clinical explanation generated by Groq LLaMA3. "
-                    "This tool is for informational purposes only - always consult a licensed pharmacist or physician."
-                )
+                    st.divider()
+                    st.caption(
+                        "Interaction data sourced from OpenFDA. "
+                        "Clinical explanation generated by Groq LLaMA3. "
+                        "This tool is for informational purposes only - always consult a licensed pharmacist or physician."
+                    )
