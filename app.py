@@ -429,7 +429,7 @@ with tab2:
             "Critical": "🚨 Critical", "Moderate": "⚠️ Moderate",
             "Low": "✅ Low", "Mild": "✅ Mild"
         })
-        st.dataframe(display_df, width='stretch')
+        st.dataframe(display_df, use_container_width=True)
     except Exception as e:
         st.error(str(e))
 
@@ -465,12 +465,12 @@ with tab3:
                       xaxis=dict(title="Department", color="#34495E"),
                       yaxis=dict(title="Cases", color="#34495E"))
     fig.update_traces(marker_color="#B8874E", textposition="outside")
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Severity Distribution")
     fig2 = px.pie(sev_df, names="severity", values="total")
     fig2.update_layout(paper_bgcolor="#F5EFE6", plot_bgcolor="#F5EFE6", font=dict(color="#34495E", size=14))
-    st.plotly_chart(fig2, width='stretch')
+    st.plotly_chart(fig2, use_container_width=True)
     st.markdown("<div style='text-align:center;color:#8B7355;padding-top:20px;'>Designed & Developed by Aarya Shirsath</div>", unsafe_allow_html=True)
 
 # ── TAB 4 ─────────────────────────────────────────────────────────
@@ -496,7 +496,7 @@ with tab4:
             return ["background-color: #DCEFD8; color: #1F5D2E"] * len(row)
 
     styled_df = display_df.style.apply(highlight_severity, axis=1)
-    st.dataframe(styled_df, width='stretch')
+    st.dataframe(styled_df, use_container_width=True)
     st.markdown("---")
     st.caption("🏥 MediAgent AI - Agentic Hospital Triage & Decision Support System")
 
