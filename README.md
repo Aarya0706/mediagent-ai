@@ -1,5 +1,13 @@
 # 🏥 MediAgent AI
 
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
+![Streamlit](https://img.shields.io/badge/Streamlit-App-red?logo=streamlit)
+![LangChain](https://img.shields.io/badge/LangChain-AI-green)
+![Groq](https://img.shields.io/badge/Groq-Llama3-orange)
+![SQLite](https://img.shields.io/badge/SQLite-Database-blue?logo=sqlite)
+![OpenFDA](https://img.shields.io/badge/OpenFDA-Live_API-success)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+
 ## AI-Powered Hospital Triage & Clinical Decision Support System
 
 Intelligent patient triage, emergency detection, department recommendation, drug interaction analysis, and doctor workflow management using a multi-agent AI architecture.
@@ -97,6 +105,18 @@ Beyond patient assessment, MediAgent AI also includes a Doctor Portal, searchabl
   - Live hospital status monitoring
 
 ---
+## ⭐ Key Highlights
+
+- 🤖 Multi-Agent AI architecture using LangChain and Groq Llama 3
+- 🩺 Intelligent symptom assessment with structured patient intake
+- 🚨 Deterministic safety guardrails for emergency detection
+- 🏥 Automatic routing across 13+ medical departments
+- 📄 Downloadable PDF clinical reports
+- 👨‍⚕️ Doctor Portal with priority-based patient queue
+- 📊 Real-time hospital analytics dashboard
+- 🔍 Searchable patient case history
+- 💊 Live OpenFDA-powered drug interaction checker
+- 💾 SQLite database for persistent case management
 
 # 🛠 Tech Stack
 
@@ -116,34 +136,34 @@ Beyond patient assessment, MediAgent AI also includes a Doctor Portal, searchabl
 
 ---
 
-# 🏗 Architecture
+## 🏗️ System Architecture
 
-```text
-                  Patient Input
-                        │
-                        ▼
-              ┌─────────────────┐
-              │ Intake Agent    │
-              │ Input Validation│
-              └────────┬────────┘
-                       │
-                       ▼
-              ┌─────────────────┐
-              │ Triage Agent    │
-              │ Severity Score  │
-              │ Department Route│
-              │ Urgency Score   │
-              └────────┬────────┘
-                       │
-                       ▼
-         ┌────────────────────────────┐
-         │ Recommendation Agent       │
-         │ Patient Guidance           │
-         │ Emergency Recommendations  │
-         └──────────────┬─────────────┘
-                        │
-                        ▼
-        Doctor Portal • Analytics • SQLite Database
+```mermaid
+flowchart TD
+
+A[Patient Input] --> B[Intake Agent]
+
+B --> C[Triage Agent]
+
+C --> D[Safety Guardrails]
+
+D --> E[Recommendation Agent]
+
+E --> F[Patient Report]
+
+F --> G[(SQLite Database)]
+
+G --> H[Doctor Portal]
+
+G --> I[Analytics Dashboard]
+
+A --> J[Drug Interaction Checker]
+
+J --> K[OpenFDA API]
+
+K --> L[Groq Llama 3]
+
+L --> M[Interaction Analysis]
 ```
 
 ---
@@ -170,20 +190,31 @@ Patient-Friendly Explanation
 
 # 📂 Project Structure
 
+## 📂 Project Structure
+
 ```text
 mediagent-ai/
-
-├── app.py
+│
 ├── agents/
+│   ├── orchestrator.py
 │   └── pipeline.py
+│
+├── database/
+│   ├── db.py
+│   └── schema.py
+│
 ├── tools/
-│   ├── save_case.py
-│   └── ...
-├── data/
-│   └── hospital.db
+│   ├── department_router.py
+│   ├── emergency_checker.py
+│   └── save_case.py
+│
 ├── screenshots/
+│
+├── app.py
+├── README.md
 ├── requirements.txt
-└── README.md
+├── runtime.txt
+└── .gitignore
 ```
 
 ---
@@ -219,48 +250,43 @@ streamlit run app.py
 
 ---
 
-# 📸 Screenshots
+## 📸 Application Screenshots
 
-## Home Page
+### 🏠 Home Page
 
-![Home](screenshots/home-page-1.png)
-
----
-
-## Patient Details
-
-![Patient Details](screenshots/home-page-2.png)
+| Main Interface | Voice Input |
+|---|---|
+| ![](screenshots/home-page-1.png) | ![](screenshots/home-page-2.png) |
 
 ---
 
-## Assessment Results
+### 🩺 AI Assessment
 
-![Assessment Results](screenshots/assessment-results.png)
-
----
-
-## Case History
-
-![Case History](screenshots/case-history.png)
+![](screenshots/assessment-results.png)
 
 ---
 
-## Analytics Dashboard
+### 📋 Patient Case History
 
-![Dashboard](screenshots/dashboard.png)
-
----
-
-## Doctor Portal
-
-![Doctor Portal](screenshots/doctor-portal.png)
+![](screenshots/case-history.png)
 
 ---
 
-## Drug Interaction Checker
+### 📊 Hospital Analytics Dashboard
 
-![Drug Interaction](screenshots/drug-interaction.png)
+![](screenshots/dashboard.png)
 
+---
+
+### 👨‍⚕️ Doctor Portal
+
+![](screenshots/doctor-portal.png)
+
+---
+
+### 💊 Drug Interaction Checker
+
+![](screenshots/drug-interaction.png)
 ---
 
 # ⭐ Key Highlights
@@ -278,6 +304,16 @@ streamlit run app.py
 - Streamlit Cloud deployment
 
 ---
+## 🚀 Future Improvements
+
+- 🎤 Speech-to-text symptom entry
+- 🌍 Multilingual support
+- 📅 Appointment booking integration
+- 📱 Mobile-responsive interface
+- 🧠 Retrieval-Augmented Generation (RAG) for clinical guidelines
+- 🏥 FHIR/HL7 healthcare interoperability
+- 🔐 User authentication and role-based access
+- 📈 Predictive hospital workload analytics
 
 # 👩‍💻 Author
 
