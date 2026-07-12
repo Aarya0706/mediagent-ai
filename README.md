@@ -2,10 +2,11 @@
 
 ## AI-Powered Hospital Triage & Clinical Decision Support System
 
-**Intelligent patient triage, emergency detection, department recommendation, drug interaction analysis, and doctor workflow management using a multi-agent AI architecture.**
+Intelligent patient triage, emergency detection, department recommendation, drug interaction analysis, and doctor workflow management using a multi-agent AI architecture.
 
-🔗 **Live Demo:** https://mediagent-ai-pbgsa8rs7dvyyhbpvydtc7.streamlit.app
+🚀 **Try the Live Application**
 
+https://mediagent-ai-pbgsa8rs7dvyyhbpvydtc7.streamlit.app
 ---
 
 # 📖 Overview
