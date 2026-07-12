@@ -162,18 +162,30 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "Patient Details", ln=True)
     pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 7,
-        f"Name: {patient_name}   |   Age: {age}   |   Gender: {gender}   |   Phone: {phone}")
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(
+        w=pdf.epw,
+        h=7,
+        text=f"Name: {patient_name}   |   Age: {age}   |   Gender: {gender}   |   Phone: {phone}",
+        new_x="LMARGIN",
+        new_y="NEXT"
+    )
 
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "Symptom Intake", ln=True)
     pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 7,
-        f"Body Area: {body_part}\n"
-        f"Description: {symptoms_desc}\n"
-        f"Duration: {duration}   |   Onset: {onset_type}   |   Pain Level: {severity_slider}/10\n"
-        f"Known Conditions: {conditions_str}"
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(
+        w=pdf.epw,
+        text=(
+            f"Body Area: {body_part}\n"
+            f"Description: {symptoms_desc}\n"
+            f"Duration: {duration}   |   Onset: {onset_type}   |   Pain Level: {severity_slider}/10\n"
+            f"Known Conditions: {conditions_str}"
+        ),
+        new_x="LMARGIN",
+        new_y="NEXT"
     )
 
     pdf.ln(3)
@@ -193,22 +205,43 @@ def generate_pdf_report(patient_name, age, gender, phone, body_part, symptoms_de
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "AI Assessment", ln=True)
     pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 7, result['summary'])
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(
+        w=pdf.epw,
+        h=7,
+        text=result["summary"],
+        new_x="LMARGIN",
+        new_y="NEXT"
+    )
 
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, "Recommended Actions", ln=True)
     pdf.set_font("Helvetica", "", 11)
     for i, action in enumerate(result["actions"], 1):
-        pdf.multi_cell(0, 7, f"{i}. {action}")
+        pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(
+        w=pdf.epw,
+        h=7,
+        text=f"{i}. {action}",
+        new_x="LMARGIN",
+        new_y="NEXT"
+    )
 
     if result["warning"]:
         pdf.ln(3)
         pdf.set_fill_color(231, 76, 60)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.multi_cell(0, 8, f"EMERGENCY WARNING: {result['warning']}", fill=True)
-
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(
+            w=pdf.epw,
+            h=8,
+            text=f"EMERGENCY WARNING: {result['warning']}",
+            fill=True,
+            new_x="LMARGIN",
+            new_y="NEXT"
+        )
     return bytes(pdf.output())
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -403,12 +436,14 @@ Allergies: {allergies.strip() or "None reported"}
                 severity   = result["severity"]
                 department = result["department"]
                 urgency    = result["urgency_score"]
+                confidence_score = result.get("confidence_score", 50)
  
                 # ── Severity banner ───────────────────────────────
                 st.markdown("---")
                 st.markdown("### 📊 Assessment Results")
+                 
  
-                res_col1, res_col2, res_col3 = st.columns(3)
+                res_col1, res_col2, res_col3, res_col4 = st.columns(4)
                 with res_col1:
                     if severity == "Critical":
                         st.error(f"🔴 **{severity}**")
@@ -424,6 +459,8 @@ Allergies: {allergies.strip() or "None reported"}
  
                 with res_col3:
                     st.metric("Urgency Score", f"{urgency} / 10")
+                with res_col4:
+                    st.metric("AI Confidence", f"{confidence_score}%")
  
                 # Urgency progress bar
                 st.progress(urgency / 10)
@@ -465,9 +502,12 @@ Allergies: {allergies.strip() or "None reported"}
                 # ── Save to DB ────────────────────────────────────
                  
                 save_case_to_db(
-                        symptoms=f"{body_part}: {symptoms_desc}",
-                        severity=severity,
-                        department=department
+                    patient_name=patient_name,
+                    symptoms=f"{body_part}: {symptoms_desc}",
+                    severity=severity,
+                    department=department,
+                    summary=result.get("summary", ""),
+                    recommendation="\n".join(result.get("actions", []))
                 )
  
                 # ── Download report ───────────────────────────────
