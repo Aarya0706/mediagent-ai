@@ -6,7 +6,6 @@
 ![Groq](https://img.shields.io/badge/Groq-Llama3-orange)
 ![SQLite](https://img.shields.io/badge/SQLite-Database-blue?logo=sqlite)
 ![OpenFDA](https://img.shields.io/badge/OpenFDA-Live_API-success)
-![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## AI-Powered Hospital Triage & Clinical Decision Support System
 
@@ -187,8 +186,6 @@ Patient-Friendly Explanation
 ```
 
 ---
-
-# 📂 Project Structure
 
 ## 📂 Project Structure
 
