@@ -250,41 +250,37 @@ streamlit run app.py
 ## 📸 Application Screenshots
 
 ### 🏠 Home Page
+![](screenshots/home-page-1.png)
 
-| Main Interface | Voice Input |
-|---|---|
-| ![](screenshots/home-page-1.png) | ![](screenshots/home-page-2.png) |
+---
+
+### 🎙️ Voice Symptom Input (Optional)
+![](screenshots/voice-input.png)
 
 ---
 
 ### 🩺 AI Assessment
-
 ![](screenshots/assessment-results.png)
 
 ---
 
 ### 📋 Patient Case History
-
 ![](screenshots/case-history.png)
 
 ---
 
 ### 📊 Hospital Analytics Dashboard
-
 ![](screenshots/dashboard.png)
 
 ---
 
 ### 👨‍⚕️ Doctor Portal
-
 ![](screenshots/doctor-portal.png)
 
 ---
 
 ### 💊 Drug Interaction Checker
-
 ![](screenshots/drug-interaction.png)
----
 
 # ⭐ Key Highlights
 
