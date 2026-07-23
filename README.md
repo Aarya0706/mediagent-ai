@@ -566,7 +566,7 @@ The platform provides AI-assisted clinical decision support and preliminary reco
 ### Connect with me
 
 - GitHub: https://github.com/Aarya0706
-- LinkedIn: *(Add your LinkedIn profile URL here)*
+- LinkedIn: https://www.linkedin.com/in/aarya-shirsath-9b7684340/
 
 ---
 
