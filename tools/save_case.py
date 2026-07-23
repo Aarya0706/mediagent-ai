@@ -109,6 +109,16 @@ def initialize_database():
             )
 
 
+        if "doctor_notes" not in columns:
+
+            cursor.execute(
+                """
+                ALTER TABLE cases
+                ADD COLUMN doctor_notes TEXT DEFAULT ''
+                """
+            )
+
+
         conn.commit()
 
 
@@ -302,6 +312,84 @@ def update_case_status(case_id, status):
 
 
     return updated > 0
+
+
+# ============================================================
+# UPDATE DOCTOR NOTES
+# ============================================================
+
+def update_case_notes(case_id, notes):
+    """
+    Saves a doctor's free-text consultation notes against a case.
+
+    Overwrites any previous notes for this case (single note field,
+    not a log) - callers that want history should read the existing
+    value first and append if that's the desired behaviour.
+    """
+
+    notes = str(notes or "").strip()
+
+    with get_connection() as conn:
+
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE cases
+
+            SET doctor_notes = ?
+
+            WHERE id = ?
+            """,
+            (
+                notes,
+                case_id
+            )
+        )
+
+
+        conn.commit()
+
+
+        updated = cursor.rowcount
+
+
+    return updated > 0
+
+
+# ============================================================
+# DELETE ONE CASE
+# ============================================================
+
+def delete_case(case_id):
+    """
+    Permanently deletes a single case by id.
+
+    Returns True if a row was deleted, False if no case with
+    that id existed (e.g. already deleted by another session).
+    """
+
+    with get_connection() as conn:
+
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            DELETE FROM cases
+
+            WHERE id = ?
+            """,
+            (case_id,)
+        )
+
+
+        conn.commit()
+
+
+        deleted = cursor.rowcount
+
+
+    return deleted > 0
 
 
 # ============================================================
