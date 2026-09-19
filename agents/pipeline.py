@@ -15,10 +15,12 @@ Usage:
 
 import re
 from agents.safety_gate import apply_safety_gate
+from agents.observability import new_run_id, traced_agent_call, log_pipeline_total
 from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.output_parser import StrOutputParser
 import os
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -750,36 +752,55 @@ def _parse_actions(text: str) -> list:
 
 def run_triage_pipeline(symptoms: str, patient_context: str = "") -> dict:
 
-    # ── Step 1: Intake ────────────────────────────────────────────
-    intake_output = intake_chain.invoke({
-        "symptoms": symptoms,
-        "patient_context": patient_context
-    })
+    # ── Observability: one run_id for every agent call this pipeline
+    # execution makes, so a Doctor Portal / admin view can group them
+    # and see exactly which step was slow or failed. Only call
+    # metadata is recorded - never symptoms or patient_context.
+    run_id = new_run_id()
+    pipeline_started = datetime.now(timezone.utc)
 
-    if intake_output.strip().startswith("INVALID"):
-        reason = intake_output.replace("INVALID:", "").strip()
+    try:
+        # ── Step 1: Intake ────────────────────────────────────────
+        intake_output = traced_agent_call(
+            run_id, "intake_agent", GROQ_MODEL, intake_chain,
+            {"symptoms": symptoms, "patient_context": patient_context},
+        )
 
-        return apply_safety_gate({
-            "valid": False,
-            "invalid_reason": reason,
-            "intake": intake_output,
-            "severity": "Unknown",
-            "department": "General Medicine",
-            "urgency_score": 0,
-            "confidence_score": 0,
-            "triage_reasoning": "",
-            "summary": "",
-            "actions": [],
-            "warning": None,
-            "guardrail_note": None,
-            "raw_triage": "",
-            "raw_recommend": "",
-        })
+        if intake_output.strip().startswith("INVALID"):
+            reason = intake_output.replace("INVALID:", "").strip()
 
-    # ── Step 2: AI Triage ─────────────────────────────────────────
-    triage_output = triage_chain.invoke({
-        "intake_output": intake_output
-    })
+            log_pipeline_total(run_id, GROQ_MODEL, pipeline_started, "success")
+
+            result = apply_safety_gate({
+                "valid": False,
+                "invalid_reason": reason,
+                "intake": intake_output,
+                "severity": "Unknown",
+                "department": "General Medicine",
+                "urgency_score": 0,
+                "confidence_score": 0,
+                "triage_reasoning": "",
+                "summary": "",
+                "actions": [],
+                "warning": None,
+                "guardrail_note": None,
+                "raw_triage": "",
+                "raw_recommend": "",
+            })
+            result["run_id"] = run_id
+            return result
+
+        # ── Step 2: AI Triage ─────────────────────────────────────
+        triage_output = traced_agent_call(
+            run_id, "triage_agent", GROQ_MODEL, triage_chain,
+            {"intake_output": intake_output},
+        )
+    except Exception:
+        log_pipeline_total(
+            run_id, GROQ_MODEL, pipeline_started, "error",
+            error_type="pipeline_step_failed",
+        )
+        raise
 
     severity = _extract_field(triage_output, "SEVERITY").strip()
     department = _extract_field(triage_output, "DEPARTMENT").strip()
@@ -925,10 +946,17 @@ URGENCY_SCORE: {urgency_score}
 CONFIDENCE_SCORE: {confidence_score}"""
 
     # ── Step 3: Generate patient recommendations ──────────────────
-    recommend_output = recommend_chain.invoke({
-        "symptoms": symptoms,
-        "triage_output": guarded_triage_output
-    })
+    try:
+        recommend_output = traced_agent_call(
+            run_id, "recommend_agent", GROQ_MODEL, recommend_chain,
+            {"symptoms": symptoms, "triage_output": guarded_triage_output},
+        )
+    except Exception:
+        log_pipeline_total(
+            run_id, GROQ_MODEL, pipeline_started, "error",
+            error_type="pipeline_step_failed",
+        )
+        raise
 
     # ── Parse recommendation output ───────────────────────────────
     summary = _extract_field(
@@ -978,7 +1006,13 @@ CONFIDENCE_SCORE: {confidence_score}"""
 
         "raw_triage": triage_output,
         "raw_recommend": recommend_output,
+
+        # Correlates this case with its agent_runs rows in
+        # agents/observability.py (latency, token usage, any failures).
+        "run_id": run_id,
     }
+
+    log_pipeline_total(run_id, GROQ_MODEL, pipeline_started, "success")
 
     # ── Final structural safety check ───────────────────────────────
     # Runs after every agent, independent of apply_triage_guardrails
