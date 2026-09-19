@@ -151,6 +151,9 @@ CLINICAL_SYNONYMS = {
     "thyroid": ["tsh", "t3", "t4"],
     "bleeding": ["platelet", "platelets"],
     "clotting": ["platelet", "platelets"],
+    "bruising": ["platelet", "platelets", "bleeding"],
+    "liver": ["alt", "ast", "liver enzymes", "hepatic"],
+    "hepatic": ["alt", "ast", "liver", "liver enzymes"],
 }
 
 

@@ -428,6 +428,37 @@ Instead of giving generic responses, the assistant considers previous cases, lab
 - 📄 Previous report retrieval
 - 👤 Personalized healthcare conversations
 
+### How the RAG flow works
+
+1. **Chunking** — lab report summaries/values and past symptom-checker cases
+   are turned into text chunks on the fly (`tools/chat_rag_tools.py`,
+   `get_patient_chunks`), each carrying a human-readable source label
+   (e.g. `"Lab report from 2026-07-21 (cbc.pdf)"`). No separate ingestion
+   pipeline or vector DB — chunks are built fresh per query from data that
+   already exists.
+2. **Authorization** — chunks are fetched with a `patient_name` filter at the
+   SQL level, not just hidden in the UI, so retrieval can never cross into
+   another patient's records (see `tests/test_authorization.py`).
+3. **Retrieval** — TF-IDF + cosine similarity over just that patient's own
+   chunks, with a small hand-picked clinical-synonym expansion (e.g.
+   "diabetes" → "blood sugar", "kidney" → "creatinine") so lay terms still
+   match clinical vocabulary. A similarity threshold (`min_similarity=0.05`)
+   decides whether the match is "confident."
+4. **PubMed fallback** — only when nothing in the patient's own records
+   clears that confidence bar does the assistant also pull relevant PubMed
+   abstracts (free NCBI E-utilities, no API key) as background literature —
+   never as a replacement for what the patient's own data does or doesn't
+   show.
+5. **Grounded generation + citations** — the LLM is instructed to answer
+   patient-specific questions *only* from the retrieved excerpts and to cite
+   them naturally ("Based on your lab report from...", "Per PubMed
+   (PMID:...)"); general (non-patient-specific) questions are clearly
+   labeled as general information. The chat UI displays the source list
+   under each answer.
+
+Retrieval quality is evaluated in `evaluation/rag_cases.json` +
+`evaluation/evaluate_rag.py` — see `evaluation/README.md`.
+
 <p align="center">
 <img src="screenshots/12-ai-health-chat.png" width="900">
 </p>

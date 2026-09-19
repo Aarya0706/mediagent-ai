@@ -1,0 +1,634 @@
+diff --git a/agents/observability.py b/agents/observability.py
+new file mode 100644
+index 0000000..ce06fed
+--- /dev/null
++++ b/agents/observability.py
+@@ -0,0 +1,278 @@
++"""
++agents/observability.py
++------------------------
++Lightweight observability for the MediAgent AI multi-agent pipeline.
++
++Multi-agent systems are hard to debug blind: when a triage run comes
++back wrong (or slow, or fails outright), you need to know *which*
++agent did it, how long each step took, and whether it's an isolated
++blip or a pattern. This module gives every pipeline run a request ID
++and records, per agent call:
++
++  - which agent ran, on which model
++  - start/end time and latency
++  - success / error, and the error type if it failed
++  - token usage, when the provider exposes it
++
++Deliberately NOT logged: symptom text, patient context, or any other
++patient content. The table below only ever stores metadata about the
++*call*, never the clinical payload - see the schema.
++
++Usage:
++    from agents.observability import new_run_id, traced_agent_call
++
++    run_id = new_run_id()
++    output = traced_agent_call(
++        run_id, "intake_agent", GROQ_MODEL, intake_chain,
++        {"symptoms": symptoms, "patient_context": patient_context},
++    )
++
++    # elsewhere (e.g. a Doctor Portal / admin view):
++    from agents.observability import get_observability_stats
++    stats = get_observability_stats(hours=24)
++"""
++
++import os
++import sqlite3
++import time
++import uuid
++from contextlib import contextmanager
++from datetime import datetime, timedelta, timezone
++
++try:
++    from langchain_core.callbacks import BaseCallbackHandler
++except ImportError:  # pragma: no cover - fallback for older langchain
++    from langchain.callbacks.base import BaseCallbackHandler
++
++# ── Storage location ────────────────────────────────────────────────
++# Same data/ directory app.py already uses for hospital.db, so this
++# ships with zero extra configuration. Kept in its own table
++# (agent_runs) rather than the old unused agent_logs scaffold in
++# database/schema.py, since that table's shape (case_id + free-text
++# "action") doesn't fit per-agent-call metrics.
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++DB_PATH = os.path.join(ROOT, "data", "hospital.db")
++
++_TABLE_SQL = """
++CREATE TABLE IF NOT EXISTS agent_runs (
++    id INTEGER PRIMARY KEY AUTOINCREMENT,
++    run_id TEXT NOT NULL,
++    agent_name TEXT NOT NULL,
++    model TEXT,
++    started_at TEXT NOT NULL,
++    latency_ms INTEGER NOT NULL,
++    status TEXT NOT NULL,          -- 'success' | 'error'
++    error_type TEXT,               -- exception class name, if any
++    prompt_tokens INTEGER,
++    completion_tokens INTEGER,
++    total_tokens INTEGER,
++    case_id INTEGER                -- linked once the case is saved, if ever
++);
++"""
++
++_INDEX_SQL = """
++CREATE INDEX IF NOT EXISTS idx_agent_runs_started_at
++    ON agent_runs (started_at);
++"""
++
++
++def _ensure_table():
++    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
++    with sqlite3.connect(DB_PATH) as conn:
++        conn.execute(_TABLE_SQL)
++        conn.execute(_INDEX_SQL)
++        conn.commit()
++
++
++def new_run_id() -> str:
++    """One ID per triage-pipeline execution, shared by all its agent calls."""
++    return uuid.uuid4().hex[:12]
++
++
++class _TokenUsageCallback(BaseCallbackHandler):
++    """Captures token usage from the LLM response, when the provider sends it.
++
++    Groq (via langchain_groq) reports usage in the same
++    `llm_output["token_usage"]` shape the OpenAI-compatible callbacks
++    expect. If a future model/provider doesn't send it, these just stay
++    None - never fail the pipeline over missing telemetry.
++    """
++
++    def __init__(self):
++        self.prompt_tokens = None
++        self.completion_tokens = None
++        self.total_tokens = None
++
++    def on_llm_end(self, response, **kwargs):
++        try:
++            usage = (response.llm_output or {}).get("token_usage", {})
++            self.prompt_tokens = usage.get("prompt_tokens")
++            self.completion_tokens = usage.get("completion_tokens")
++            self.total_tokens = usage.get("total_tokens")
++        except Exception:
++            # Telemetry must never break the actual agent call.
++            pass
++
++
++def _log_row(
++    run_id,
++    agent_name,
++    model,
++    started_at,
++    latency_ms,
++    status,
++    error_type=None,
++    prompt_tokens=None,
++    completion_tokens=None,
++    total_tokens=None,
++    case_id=None,
++):
++    try:
++        _ensure_table()
++        with sqlite3.connect(DB_PATH) as conn:
++            conn.execute(
++                """
++                INSERT INTO agent_runs (
++                    run_id, agent_name, model, started_at, latency_ms,
++                    status, error_type,
++                    prompt_tokens, completion_tokens, total_tokens, case_id
++                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++                """,
++                (
++                    run_id, agent_name, model, started_at, latency_ms,
++                    status, error_type,
++                    prompt_tokens, completion_tokens, total_tokens, case_id,
++                ),
++            )
++            conn.commit()
++    except Exception:
++        # Observability is best-effort - a logging failure must never
++        # take down a triage run.
++        pass
++
++
++@contextmanager
++def _timed_call(run_id, agent_name, model):
++    """Times a block, logs it on the way out (success or exception),
++    and re-raises. Yields the callback so callers can pass it into
++    chain.invoke(config={"callbacks": [...]}) to capture token usage."""
++    callback = _TokenUsageCallback()
++    started_at = datetime.now(timezone.utc).isoformat()
++    start = time.monotonic()
++    try:
++        yield callback
++    except Exception as exc:
++        latency_ms = int((time.monotonic() - start) * 1000)
++        _log_row(
++            run_id, agent_name, model, started_at, latency_ms,
++            status="error", error_type=type(exc).__name__,
++        )
++        raise
++    else:
++        latency_ms = int((time.monotonic() - start) * 1000)
++        _log_row(
++            run_id, agent_name, model, started_at, latency_ms,
++            status="success",
++            prompt_tokens=callback.prompt_tokens,
++            completion_tokens=callback.completion_tokens,
++            total_tokens=callback.total_tokens,
++        )
++
++
++def traced_agent_call(run_id, agent_name, model, chain, invoke_kwargs):
++    """Runs `chain.invoke(invoke_kwargs)`, logging latency/status/tokens
++    against `run_id` and `agent_name`. Returns whatever the chain returns;
++    exceptions are logged then re-raised unchanged."""
++    with _timed_call(run_id, agent_name, model) as callback:
++        return chain.invoke(
++            invoke_kwargs,
++            config={"callbacks": [callback]},
++        )
++
++
++def log_pipeline_total(run_id, model, started_at, status, error_type=None):
++    """Optional roll-up row for the whole pipeline run (agent_name =
++    'pipeline_total'), so stats can report end-to-end latency alongside
++    per-agent latency."""
++    latency_ms = int(
++        (datetime.now(timezone.utc) - started_at).total_seconds() * 1000
++    )
++    _log_row(
++        run_id, "pipeline_total", model,
++        started_at.isoformat(), latency_ms,
++        status=status, error_type=error_type,
++    )
++
++
++def get_observability_stats(hours: int = 24, failure_limit: int = 10) -> dict:
++    """Summary for a dev/admin view: total runs, success rate, average
++    latency, and the most recent failures (agent + error type + when -
++    never symptom/patient content, since that's never stored here)."""
++    _ensure_table()
++    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
++
++    with sqlite3.connect(DB_PATH) as conn:
++        conn.row_factory = sqlite3.Row
++
++        totals = conn.execute(
++            """
++            SELECT
++                COUNT(*) AS total_calls,
++                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successes,
++                AVG(latency_ms) AS avg_latency_ms
++            FROM agent_runs
++            WHERE started_at >= ? AND agent_name != 'pipeline_total'
++            """,
++            (cutoff,),
++        ).fetchone()
++
++        runs = conn.execute(
++            """
++            SELECT COUNT(DISTINCT run_id) AS run_count
++            FROM agent_runs
++            WHERE started_at >= ?
++            """,
++            (cutoff,),
++        ).fetchone()
++
++        by_agent = conn.execute(
++            """
++            SELECT
++                agent_name,
++                COUNT(*) AS calls,
++                AVG(latency_ms) AS avg_latency_ms,
++                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors
++            FROM agent_runs
++            WHERE started_at >= ?
++            GROUP BY agent_name
++            ORDER BY agent_name
++            """,
++            (cutoff,),
++        ).fetchall()
++
++        failures = conn.execute(
++            """
++            SELECT run_id, agent_name, model, started_at, error_type
++            FROM agent_runs
++            WHERE started_at >= ? AND status = 'error'
++            ORDER BY started_at DESC
++            LIMIT ?
++            """,
++            (cutoff, failure_limit),
++        ).fetchall()
++
++    total_calls = totals["total_calls"] or 0
++    successes = totals["successes"] or 0
++    success_rate = (successes / total_calls * 100) if total_calls else None
++
++    return {
++        "window_hours": hours,
++        "total_runs": runs["run_count"] or 0,
++        "total_agent_calls": total_calls,
++        "success_rate_pct": round(success_rate, 1) if success_rate is not None else None,
++        "avg_latency_ms": (
++            round(totals["avg_latency_ms"], 0) if totals["avg_latency_ms"] is not None else None
++        ),
++        "by_agent": [dict(row) for row in by_agent],
++        "recent_failures": [dict(row) for row in failures],
++    }
+diff --git a/agents/pipeline.py b/agents/pipeline.py
+index ae2ecf8..a3d8eae 100644
+--- a/agents/pipeline.py
++++ b/agents/pipeline.py
+@@ -15,10 +15,12 @@ Usage:
+ 
+ import re
+ from agents.safety_gate import apply_safety_gate
++from agents.observability import new_run_id, traced_agent_call, log_pipeline_total
+ from langchain_groq import ChatGroq
+ from langchain.prompts import ChatPromptTemplate
+ from langchain.schema.output_parser import StrOutputParser
+ import os
++from datetime import datetime, timezone
+ from dotenv import load_dotenv
+ 
+ load_dotenv()
+@@ -750,36 +752,55 @@ def _parse_actions(text: str) -> list:
+ 
+ def run_triage_pipeline(symptoms: str, patient_context: str = "") -> dict:
+ 
+-    # ── Step 1: Intake ────────────────────────────────────────────
+-    intake_output = intake_chain.invoke({
+-        "symptoms": symptoms,
+-        "patient_context": patient_context
+-    })
+-
+-    if intake_output.strip().startswith("INVALID"):
+-        reason = intake_output.replace("INVALID:", "").strip()
+-
+-        return apply_safety_gate({
+-            "valid": False,
+-            "invalid_reason": reason,
+-            "intake": intake_output,
+-            "severity": "Unknown",
+-            "department": "General Medicine",
+-            "urgency_score": 0,
+-            "confidence_score": 0,
+-            "triage_reasoning": "",
+-            "summary": "",
+-            "actions": [],
+-            "warning": None,
+-            "guardrail_note": None,
+-            "raw_triage": "",
+-            "raw_recommend": "",
+-        })
+-
+-    # ── Step 2: AI Triage ─────────────────────────────────────────
+-    triage_output = triage_chain.invoke({
+-        "intake_output": intake_output
+-    })
++    # ── Observability: one run_id for every agent call this pipeline
++    # execution makes, so a Doctor Portal / admin view can group them
++    # and see exactly which step was slow or failed. Only call
++    # metadata is recorded - never symptoms or patient_context.
++    run_id = new_run_id()
++    pipeline_started = datetime.now(timezone.utc)
++
++    try:
++        # ── Step 1: Intake ────────────────────────────────────────
++        intake_output = traced_agent_call(
++            run_id, "intake_agent", GROQ_MODEL, intake_chain,
++            {"symptoms": symptoms, "patient_context": patient_context},
++        )
++
++        if intake_output.strip().startswith("INVALID"):
++            reason = intake_output.replace("INVALID:", "").strip()
++
++            log_pipeline_total(run_id, GROQ_MODEL, pipeline_started, "success")
++
++            result = apply_safety_gate({
++                "valid": False,
++                "invalid_reason": reason,
++                "intake": intake_output,
++                "severity": "Unknown",
++                "department": "General Medicine",
++                "urgency_score": 0,
++                "confidence_score": 0,
++                "triage_reasoning": "",
++                "summary": "",
++                "actions": [],
++                "warning": None,
++                "guardrail_note": None,
++                "raw_triage": "",
++                "raw_recommend": "",
++            })
++            result["run_id"] = run_id
++            return result
++
++        # ── Step 2: AI Triage ─────────────────────────────────────
++        triage_output = traced_agent_call(
++            run_id, "triage_agent", GROQ_MODEL, triage_chain,
++            {"intake_output": intake_output},
++        )
++    except Exception:
++        log_pipeline_total(
++            run_id, GROQ_MODEL, pipeline_started, "error",
++            error_type="pipeline_step_failed",
++        )
++        raise
+ 
+     severity = _extract_field(triage_output, "SEVERITY").strip()
+     department = _extract_field(triage_output, "DEPARTMENT").strip()
+@@ -925,10 +946,17 @@ URGENCY_SCORE: {urgency_score}
+ CONFIDENCE_SCORE: {confidence_score}"""
+ 
+     # ── Step 3: Generate patient recommendations ──────────────────
+-    recommend_output = recommend_chain.invoke({
+-        "symptoms": symptoms,
+-        "triage_output": guarded_triage_output
+-    })
++    try:
++        recommend_output = traced_agent_call(
++            run_id, "recommend_agent", GROQ_MODEL, recommend_chain,
++            {"symptoms": symptoms, "triage_output": guarded_triage_output},
++        )
++    except Exception:
++        log_pipeline_total(
++            run_id, GROQ_MODEL, pipeline_started, "error",
++            error_type="pipeline_step_failed",
++        )
++        raise
+ 
+     # ── Parse recommendation output ───────────────────────────────
+     summary = _extract_field(
+@@ -978,8 +1006,14 @@ CONFIDENCE_SCORE: {confidence_score}"""
+ 
+         "raw_triage": triage_output,
+         "raw_recommend": recommend_output,
++
++        # Correlates this case with its agent_runs rows in
++        # agents/observability.py (latency, token usage, any failures).
++        "run_id": run_id,
+     }
+ 
++    log_pipeline_total(run_id, GROQ_MODEL, pipeline_started, "success")
++
+     # ── Final structural safety check ───────────────────────────────
+     # Runs after every agent, independent of apply_triage_guardrails
+     # above. Guarantees an emergency case always carries an explicit
+diff --git a/app.py b/app.py
+index 8f3c242..d1e5626 100644
+--- a/app.py
++++ b/app.py
+@@ -1844,6 +1844,55 @@ with tab3:
+                 "Live clinical work queue prioritized by severity and urgency."
+             )
+ 
++            # ---------------------------------------------------------
++            # AGENT OBSERVABILITY
++            # ---------------------------------------------------------
++            # Shown before the case queue (and before the st.stop() below
++            # for an empty queue) so it's visible even on a fresh
++            # install with zero cases yet. See agents/observability.py -
++            # this reads call metadata only, never symptom/patient text.
++            with st.expander("🔎 Agent Observability (last 24h)", expanded=False):
++                try:
++                    from agents.observability import get_observability_stats
++                    obs_stats = get_observability_stats(hours=24)
++
++                    if obs_stats["total_agent_calls"] == 0:
++                        st.caption("No agent runs recorded in this window yet.")
++                    else:
++                        oc1, oc2, oc3, oc4 = st.columns(4)
++                        oc1.metric("Triage runs", obs_stats["total_runs"])
++                        oc2.metric("Agent calls", obs_stats["total_agent_calls"])
++                        oc3.metric(
++                            "Success rate",
++                            f"{obs_stats['success_rate_pct']}%"
++                            if obs_stats["success_rate_pct"] is not None
++                            else "—",
++                        )
++                        oc4.metric(
++                            "Avg latency",
++                            f"{obs_stats['avg_latency_ms']:.0f} ms"
++                            if obs_stats["avg_latency_ms"] is not None
++                            else "—",
++                        )
++
++                        if obs_stats["by_agent"]:
++                            st.caption("By agent")
++                            st.dataframe(
++                                pd.DataFrame(obs_stats["by_agent"]),
++                                width="stretch",
++                                hide_index=True,
++                            )
++
++                        if obs_stats["recent_failures"]:
++                            st.caption("Recent failures")
++                            st.dataframe(
++                                pd.DataFrame(obs_stats["recent_failures"]),
++                                width="stretch",
++                                hide_index=True,
++                            )
++                except Exception as _obs_err:
++                    st.caption(f"Observability data unavailable: {_obs_err}")
++
+             # ---------------------------------------------------------
+             # LOAD CASES
+             # ---------------------------------------------------------
+diff --git a/tests/test_observability.py b/tests/test_observability.py
+new file mode 100644
+index 0000000..7f04994
+--- /dev/null
++++ b/tests/test_observability.py
+@@ -0,0 +1,144 @@
++"""
++tests/test_observability.py
++-----------------------------
++Unit tests for agents.observability. Everything here is pure
++SQLite + Python - no LLM/network calls - so it's safe to run in CI
++without GROQ_API_KEY, same as test_safety_gate.py and
++test_authorization.py.
++
++Each test points the module at a fresh temp DB file (via monkeypatch)
++so runs don't collide with each other or with a real data/hospital.db.
++
++Run:
++    pytest tests/test_observability.py -v
++"""
++
++import os
++import sys
++from datetime import datetime, timezone
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++if ROOT not in sys.path:
++    sys.path.insert(0, ROOT)
++
++import agents.observability as observability
++
++
++def _use_temp_db(monkeypatch, tmp_path):
++    db_path = str(tmp_path / "test_observability.db")
++    monkeypatch.setattr(observability, "DB_PATH", db_path)
++    return db_path
++
++
++def test_ensure_table_is_idempotent(monkeypatch, tmp_path):
++    _use_temp_db(monkeypatch, tmp_path)
++
++    observability._ensure_table()
++    observability._ensure_table()  # must not raise on second call
++
++
++def test_new_run_id_is_unique_and_short():
++    ids = {observability.new_run_id() for _ in range(50)}
++
++    assert len(ids) == 50
++    assert all(len(run_id) == 12 for run_id in ids)
++
++
++def test_traced_agent_call_logs_success_and_returns_chain_output(
++    monkeypatch, tmp_path
++):
++    _use_temp_db(monkeypatch, tmp_path)
++
++    class FakeChain:
++        def invoke(self, kwargs, config=None):
++            return "chain output"
++
++    run_id = observability.new_run_id()
++    output = observability.traced_agent_call(
++        run_id, "intake_agent", "test-model", FakeChain(), {"symptoms": "x"}
++    )
++
++    assert output == "chain output"
++
++    stats = observability.get_observability_stats(hours=24)
++    assert stats["total_agent_calls"] == 1
++    assert stats["success_rate_pct"] == 100.0
++    assert stats["recent_failures"] == []
++
++
++def test_traced_agent_call_logs_failure_and_reraises(monkeypatch, tmp_path):
++    _use_temp_db(monkeypatch, tmp_path)
++
++    class FailingChain:
++        def invoke(self, kwargs, config=None):
++            raise ValueError("boom")
++
++    run_id = observability.new_run_id()
++
++    try:
++        observability.traced_agent_call(
++            run_id, "triage_agent", "test-model", FailingChain(), {}
++        )
++        assert False, "expected ValueError to propagate"
++    except ValueError:
++        pass
++
++    stats = observability.get_observability_stats(hours=24)
++    assert stats["total_agent_calls"] == 1
++    assert stats["success_rate_pct"] == 0.0
++    assert len(stats["recent_failures"]) == 1
++    assert stats["recent_failures"][0]["agent_name"] == "triage_agent"
++    assert stats["recent_failures"][0]["error_type"] == "ValueError"
++
++
++def test_stats_respect_time_window(monkeypatch, tmp_path):
++    db_path = _use_temp_db(monkeypatch, tmp_path)
++    observability._ensure_table()
++
++    import sqlite3
++
++    old_timestamp = "2000-01-01T00:00:00+00:00"
++    with sqlite3.connect(db_path) as conn:
++        conn.execute(
++            """
++            INSERT INTO agent_runs (
++                run_id, agent_name, model, started_at, latency_ms, status
++            ) VALUES (?, ?, ?, ?, ?, ?)
++            """,
++            ("old-run", "intake_agent", "test-model", old_timestamp, 100, "success"),
++        )
++        conn.commit()
++
++    stats = observability.get_observability_stats(hours=24)
++
++    assert stats["total_agent_calls"] == 0
++    assert stats["total_runs"] == 0
++
++
++def test_logged_rows_never_contain_patient_content(monkeypatch, tmp_path):
++    """The whole point of this table is call metadata only. Guard against
++    a future change accidentally adding a symptoms/patient_context column."""
++    _use_temp_db(monkeypatch, tmp_path)
++    observability._ensure_table()
++
++    import sqlite3
++
++    with sqlite3.connect(observability.DB_PATH) as conn:
++        columns = {
++            row[1] for row in conn.execute("PRAGMA table_info(agent_runs)")
++        }
++
++    forbidden = {"symptoms", "patient_context", "intake", "summary", "notes"}
++    assert not (columns & forbidden)
++
++
++def test_log_pipeline_total_records_a_pipeline_total_row(monkeypatch, tmp_path):
++    _use_temp_db(monkeypatch, tmp_path)
++
++    run_id = observability.new_run_id()
++    started = datetime.now(timezone.utc)
++    observability.log_pipeline_total(run_id, "test-model", started, "success")
++
++    stats = observability.get_observability_stats(hours=24)
++    agent_names = {row["agent_name"] for row in stats["by_agent"]}
++    assert "pipeline_total" in agent_names
