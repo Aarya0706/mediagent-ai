@@ -13,6 +13,7 @@ Usage:
   result = run_triage_pipeline(symptoms, patient_context)
 """
 
+import re
 from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.output_parser import StrOutputParser
@@ -22,11 +23,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── LLM ─────────────────────────────────────────────────────────
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0.2,
-    api_key=os.getenv("GROQ_API_KEY")
-)
+# GROQ_MODEL lets you override the model per-run (e.g. for evaluation)
+# without touching production. Falls back to the oss-20b model used
+# in the deployed app if the env var isn't set.
+# ── LLM ─────────────────────────────────────────────────────────
+# GROQ_MODEL lets you override the model per-run (e.g. for evaluation)
+# without touching production — BUT only to a model we've verified is
+# actually reachable on this account's tier. Groq periodically moves
+# models to Enterprise-only access (this broke llama-3.3-70b-versatile
+# and llama-3.1-8b-instant during this project's development) — if that
+# happens to whatever GROQ_MODEL is set to (env var, stray secret, etc.),
+# falling back automatically here is what keeps production from going
+# down instead of 404ing on every request.
+_KNOWN_GOOD_MODELS = {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}
+_requested_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL = _requested_model if _requested_model in _KNOWN_GOOD_MODELS else "openai/gpt-oss-20b"
+
+_llm_kwargs = {
+    "model": GROQ_MODEL,
+    "temperature": 0.2,
+    "api_key": os.getenv("GROQ_API_KEY"),
+}
+
+# reasoning_effort is an openai/gpt-oss-specific param — only pass it
+# when that family of model is actually selected, otherwise Llama/other
+# models on Groq will reject the request.
+if GROQ_MODEL.startswith("openai/gpt-oss"):
+    _llm_kwargs["model_kwargs"] = {"reasoning_effort": "low"}
+
+llm = ChatGroq(**_llm_kwargs)
 
 parser = StrOutputParser()
 
@@ -98,6 +123,12 @@ IMPORTANT SAFETY AND REASONING RULES:
    - signs of stroke
    - uncontrolled major bleeding
    - severe allergic reaction affecting breathing
+   - signs of a surgical abdominal emergency (rigid or board-like
+     abdomen, severe pain that worsens with movement or palpation,
+     suspected appendicitis or bowel perforation)
+   - sudden, painless loss of vision in one eye (e.g. described as a
+     curtain or shadow coming down) — a time-critical ophthalmological
+     or vascular emergency
    - other clear life-threatening red flags
 
 5. Moderate severity means prompt medical evaluation is appropriate,
@@ -323,64 +354,140 @@ recommend_chain = recommend_prompt | llm | parser
 
 
 # ══════════════════════════════════════════════════════════════════
+# DETERMINISTIC RED-FLAG PATTERNS
+#
+# Regex, not plain substring matching. The original literal-phrase list
+# (e.g. "loss of consciousness", "coughing blood") silently missed real
+# clinical language that used a different inflection or inserted a word
+# ("lost consciousness", "coughing up blood") — the phrase was clinically
+# present but the exact string wasn't, so Rule 1 never fired and Rule 4
+# downgraded a correct LLM "Critical" call to "Moderate".
+#
+# Each pattern below is still scoped tightly to a single clinical red
+# flag (word-boundaried, case-insensitive) so it doesn't start catching
+# unrelated mild cases (e.g. "chest" alone must never match — chest pain
+# patterns explicitly require the qualifier + "chest" together).
+# ══════════════════════════════════════════════════════════════════
+
+EMERGENCY_RED_FLAG_PATTERNS = [
+    # Breathing emergencies
+    r"\bsevere\s+difficulty\s+breathing\b",
+    r"\bdifficulty\s+breathing\b",
+    r"\bcan(?:no|')t\s+breathe\b",
+    r"\bcannot\s+breathe\b",
+    r"\bstopped\s+breathing\b",
+    r"\btrouble\s+breathing\b",
+    r"\bshort(?:ness)?\s+of\s+breath\b",
+    r"\bgasping\s+for\s+(?:air|breath)\b",
+
+    # Loss of consciousness / neurological emergencies
+    r"\bloss\s+of\s+consciousness\b",
+    r"\blost\s+consciousness\b",
+    r"\bunconscious\b",
+    r"\bpassed\s+out\b",
+    r"\bfainted\b",
+    r"\bunresponsive\b",
+    r"\bseizure\b",
+    r"\bconvuls(?:ing|ion)\b",
+    r"\bface\s+drooping\b",
+    r"\bfacial\s+droop\b",
+    r"\bslurred\s+speech\b",
+    r"\bsudden\s+weakness\b",
+    r"\bone[-\s]sided\s+weakness\b",
+    r"\btrouble\s+finding\s+words\b",
+
+    # Chest pain emergencies — "chest" is always mandatory in the pattern,
+    # so this never matches generic "severe pain" for another body part.
+    r"\bsevere\s+chest\s+pain\b",
+    r"\bsevere\s+pain\s+in\s+(?:the\s+)?chest\b",
+    r"\bintense\s+chest\s+pain\b",
+    r"\bintense\s+pain\s+in\s+(?:the\s+)?chest\b",
+    r"\bcrushing\s+chest\s+pain\b",
+    r"\bcrushing\s+(?:pressure|pain)\s+in\s+(?:the\s+)?chest\b",
+    r"\bchest\s+pressure\b",
+
+    # Major bleeding
+    r"\bheavy\s+bleeding\b",
+    r"\bsevere\s+bleeding\b",
+    r"\bbleeding\s+heavily\b",
+    r"\bcoughing\s+(?:up\s+)?blood\b",
+    r"\bvomit(?:ing|ed)\s+blood\b",
+
+    # Severe allergic reaction
+    r"\bsevere\s+allergic\s+reaction\b",
+    r"\banaphylaxis\b",
+    r"\bthroat\s+(?:closing|tightening)\b",
+]
+
+_COMPILED_RED_FLAGS = [re.compile(p, re.IGNORECASE) for p in EMERGENCY_RED_FLAG_PATTERNS]
+
+# Words that negate whatever red-flag phrase follows them shortly after.
+# Without this, "no shortness of breath" or "no heavy bleeding" would be
+# treated identically to an actual positive report of that symptom —
+# a real false-positive bug found via CARD-201 and OBGYN-1401, where
+# patients explicitly denying a symptom still triggered Critical/Emergency.
+_NEGATION_CUES = re.compile(
+    r"\b(no|not|without|denies|denied|absent|negative for)\b",
+    re.IGNORECASE,
+)
+_NEGATION_LOOKBACK_CHARS = 20
+
+
+def _has_emergency_red_flag(text: str) -> bool:
+    for pattern in _COMPILED_RED_FLAGS:
+        for match in pattern.finditer(text):
+            window_start = max(0, match.start() - _NEGATION_LOOKBACK_CHARS)
+            preceding_text = text[window_start:match.start()]
+            # Restrict to the current clause only. Without this, a negation
+            # word from an EARLIER, unrelated clause within the raw character
+            # window (e.g. "no nausea" in "no fever, no nausea, but severe
+            # chest pain...") would wrongly suppress a real red flag that
+            # comes right after it in a new clause.
+            last_boundary = max(
+                preceding_text.rfind(","),
+                preceding_text.rfind(";"),
+                preceding_text.rfind("."),
+            )
+            if last_boundary != -1:
+                preceding_text = preceding_text[last_boundary + 1:]
+            if _NEGATION_CUES.search(preceding_text):
+                # e.g. "no shortness of breath" — the phrase is present
+                # but explicitly denied, so it isn't a red flag.
+                continue
+            return True
+    return False
+
+
+# The confidence score (0-100) below which an LLM Critical call is
+# treated as unreliable enough to downgrade. Above this, an LLM Critical
+# call is trusted even without a matching red-flag phrase. See Rule 4.
+LOW_CONFIDENCE_THRESHOLD = 60
+
+
+# ══════════════════════════════════════════════════════════════════
 # PIPELINE RUNNER
 # ══════════════════════════════════════════════════════════════════
 def apply_triage_guardrails(
     symptoms: str,
     severity: str,
     department: str,
-    urgency_score: int
+    urgency_score: int,
+    confidence_score: int = None,
 ):
     """
     Deterministic safety layer for obvious high-confidence cases.
 
     The LLM performs the main triage reasoning.
     Guardrails correct unsafe or clearly inconsistent outputs.
+
+    Returns (severity, department, urgency_score, guardrail_note).
+    guardrail_note is a short string describing *why* the guardrail
+    acted, or None if it didn't change anything. This makes every
+    guardrail decision auditable instead of silent.
     """
 
     text = symptoms.lower().strip()
-
-
-    # ============================================================
-    # EMERGENCY RED FLAGS
-    # ============================================================
-
-    emergency_red_flags = [
-
-        # Breathing emergencies
-        "difficulty breathing",
-        "severe difficulty breathing",
-        "cannot breathe",
-        "can't breathe",
-        "stopped breathing",
-
-        # Loss of consciousness / neurological emergencies
-        "unconscious",
-        "loss of consciousness",
-        "passed out",
-        "seizure",
-        "face drooping",
-        "slurred speech",
-        "sudden weakness",
-
-        # Chest pain emergencies
-        "severe chest pain",
-        "severe pain in chest",
-        "intense chest pain",
-        "intense pain in chest",
-        "crushing chest pain",
-        "chest pressure",
-
-        # Major bleeding
-        "heavy bleeding",
-        "severe bleeding",
-        "coughing blood",
-        "vomiting blood",
-
-        # Severe allergic reaction
-        "severe allergic reaction",
-        "anaphylaxis"
-    ]
+    guardrail_note = None
 
 
     # ============================================================
@@ -434,10 +541,7 @@ def apply_triage_guardrails(
     # DETECT SIGNALS
     # ============================================================
 
-    has_emergency_red_flag = any(
-        flag in text
-        for flag in emergency_red_flags
-    )
+    has_emergency_red_flag = _has_emergency_red_flag(text)
 
     has_cardiology_signal = any(
         signal in text
@@ -465,8 +569,13 @@ def apply_triage_guardrails(
         severity = "Critical"
         department = "Emergency"
         urgency_score = max(9, urgency_score)
+        guardrail_note = (
+            "Matched an explicit emergency red-flag phrase in the "
+            "patient-reported symptoms — routed to Emergency regardless "
+            "of the LLM's own classification."
+        )
 
-        return severity, department, urgency_score
+        return severity, department, urgency_score, guardrail_note
 
 
     # ============================================================
@@ -483,7 +592,7 @@ def apply_triage_guardrails(
 
         urgency_score = max(6, min(urgency_score, 8))
 
-        return severity, department, urgency_score
+        return severity, department, urgency_score, guardrail_note
 
 
     # ============================================================
@@ -504,21 +613,53 @@ def apply_triage_guardrails(
 
 
     # ============================================================
-    # RULE 4
-    # PREVENT UNSUPPORTED CRITICAL CLASSIFICATION
+    # RULE 4 — TRUST-BY-DEFAULT (INVERTED)
+    #
+    # Reaching this point means: no hardcoded red-flag phrase matched
+    # (Rule 1 already returned early if one had), but the LLM still
+    # classified this case as Critical on its own judgment.
+    #
+    # OLD BEHAVIOUR (removed): silently downgrade every such case to
+    # Moderate. That treats "no phrase matched" as proof the LLM is
+    # wrong, which punishes correct judgment on real emergencies that
+    # simply weren't phrased using one of ~30 hardcoded strings
+    # (e.g. a thunderclap headache, a rigid acute abdomen, early
+    # anaphylaxis described without the word "anaphylaxis").
+    #
+    # NEW BEHAVIOUR: trust the LLM's Critical call by default. Only
+    # downgrade when there is a SPECIFIC, NAMED reason to distrust this
+    # particular call — currently: the LLM's own confidence score came
+    # back below LOW_CONFIDENCE_THRESHOLD. Every downgrade or trust
+    # decision is logged in guardrail_note instead of happening silently.
     # ============================================================
 
     if severity == "Critical":
 
-        severity = "Moderate"
+        if confidence_score is not None and confidence_score < LOW_CONFIDENCE_THRESHOLD:
+            severity = "Moderate"
+            urgency_score = min(urgency_score, 8)
 
-        urgency_score = min(
-            urgency_score,
-            8
-        )
+            if department == "Emergency":
+                department = "General Medicine"
 
-        if department == "Emergency":
-            department = "General Medicine"
+            guardrail_note = (
+                f"LLM classified this as Critical, but its own confidence "
+                f"score ({confidence_score}) was below the "
+                f"{LOW_CONFIDENCE_THRESHOLD} reliability threshold and no "
+                f"red-flag phrase confirmed it — downgraded to Moderate "
+                f"pending clinician review."
+            )
+
+        else:
+            department = "Emergency"
+
+            guardrail_note = (
+                "LLM classified this as Critical with reasonable "
+                "confidence, though no hardcoded red-flag phrase matched "
+                "the wording used. Trusted and routed to Emergency; "
+                "flagged for review since it bypassed the deterministic "
+                "phrase list."
+            )
 
 
     # ============================================================
@@ -550,7 +691,7 @@ def apply_triage_guardrails(
         )
 
 
-    return severity, department, urgency_score
+    return severity, department, urgency_score, guardrail_note
 # ============================================================
 # PIPELINE HELPERS
 # ============================================================
@@ -629,6 +770,7 @@ def run_triage_pipeline(symptoms: str, patient_context: str = "") -> dict:
             "summary": "",
             "actions": [],
             "warning": None,
+            "guardrail_note": None,
             "raw_triage": "",
             "raw_recommend": "",
         }
@@ -710,7 +852,9 @@ def run_triage_pipeline(symptoms: str, patient_context: str = "") -> dict:
     # IMPORTANT:
     # Include patient_context so pain level, onset, duration,
     # body area and other intake information can influence
-    # high-confidence safety rules.
+    # high-confidence safety rules. confidence_score is passed so
+    # Rule 4 can decide whether to trust or downgrade an LLM Critical
+    # call instead of downgrading it unconditionally.
     #
     guardrail_input = f"""
 Symptoms: {symptoms}
@@ -719,13 +863,14 @@ Patient Context:
 {patient_context}
 """.strip()
 
-    severity, department, urgency_score = apply_triage_guardrails(
+    severity, department, urgency_score, guardrail_note = apply_triage_guardrails(
         symptoms=guardrail_input,
         severity=severity,
         department=department,
-        urgency_score=urgency_score
+        urgency_score=urgency_score,
+        confidence_score=confidence_score,
     )
-     
+
 
     # ── Detect whether guardrails changed AI output ───────────────
     guardrail_changed_result = (
@@ -735,16 +880,19 @@ Patient Context:
     )
 
     # ── Update reasoning when guardrail overrides AI ──────────────
-    if guardrail_changed_result:
+    #
+    # guardrail_note (set by Rule 1 or Rule 4) is the most specific,
+    # audit-friendly explanation available and takes priority. Rules 2
+    # and 3 don't set a note (their behaviour is unambiguous from the
+    # department alone), so those fall back to the generic messages
+    # below, same as before.
+    #
+    if guardrail_note:
+        triage_reasoning = guardrail_note
 
-        if severity == "Critical" and department == "Emergency":
-            triage_reasoning = (
-                "The reported symptoms contain explicit emergency warning "
-                "signs requiring immediate medical evaluation. The case has "
-                "been routed to Emergency for urgent assessment."
-            )
+    elif guardrail_changed_result:
 
-        elif department == "Cardiology":
+        if department == "Cardiology":
             triage_reasoning = (
                 "The reported chest symptoms require prompt medical "
                 "evaluation for possible heart-related causes. The case has "
@@ -822,7 +970,11 @@ CONFIDENCE_SCORE: {confidence_score}"""
         "actions": actions,
         "warning": warning,
 
+        # New: exposes *why* the deterministic guardrail acted (or None
+        # if it didn't), so this is auditable instead of a black box.
+        # Useful for the Doctor Portal / observability work later.
+        "guardrail_note": guardrail_note,
+
         "raw_triage": triage_output,
         "raw_recommend": recommend_output,
     }
- 

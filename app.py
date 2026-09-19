@@ -2463,9 +2463,10 @@ with tab3:
 @st.cache_resource
 def get_drug_llm():
     return ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         temperature=0.2,
-        api_key=os.getenv("GROQ_API_KEY")
+        api_key=os.getenv("GROQ_API_KEY"),
+        model_kwargs={"reasoning_effort": "low"}
     )
 
 
@@ -2476,9 +2477,10 @@ _drug_llm = get_drug_llm()
 @st.cache_resource
 def get_lab_llm():
     return ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         temperature=0.1,
-        api_key=os.getenv("GROQ_API_KEY")
+        api_key=os.getenv("GROQ_API_KEY"),
+        model_kwargs={"reasoning_effort": "low"}
     )
 
 
