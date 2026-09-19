@@ -1,0 +1,613 @@
+diff --git a/README.md b/README.md
+index f20b317..f3dc95d 100644
+--- a/README.md
++++ b/README.md
+@@ -428,6 +428,37 @@ Instead of giving generic responses, the assistant considers previous cases, lab
+ - 📄 Previous report retrieval
+ - 👤 Personalized healthcare conversations
+ 
++### How the RAG flow works
++
++1. **Chunking** — lab report summaries/values and past symptom-checker cases
++   are turned into text chunks on the fly (`tools/chat_rag_tools.py`,
++   `get_patient_chunks`), each carrying a human-readable source label
++   (e.g. `"Lab report from 2026-07-21 (cbc.pdf)"`). No separate ingestion
++   pipeline or vector DB — chunks are built fresh per query from data that
++   already exists.
++2. **Authorization** — chunks are fetched with a `patient_name` filter at the
++   SQL level, not just hidden in the UI, so retrieval can never cross into
++   another patient's records (see `tests/test_authorization.py`).
++3. **Retrieval** — TF-IDF + cosine similarity over just that patient's own
++   chunks, with a small hand-picked clinical-synonym expansion (e.g.
++   "diabetes" → "blood sugar", "kidney" → "creatinine") so lay terms still
++   match clinical vocabulary. A similarity threshold (`min_similarity=0.05`)
++   decides whether the match is "confident."
++4. **PubMed fallback** — only when nothing in the patient's own records
++   clears that confidence bar does the assistant also pull relevant PubMed
++   abstracts (free NCBI E-utilities, no API key) as background literature —
++   never as a replacement for what the patient's own data does or doesn't
++   show.
++5. **Grounded generation + citations** — the LLM is instructed to answer
++   patient-specific questions *only* from the retrieved excerpts and to cite
++   them naturally ("Based on your lab report from...", "Per PubMed
++   (PMID:...)"); general (non-patient-specific) questions are clearly
++   labeled as general information. The chat UI displays the source list
++   under each answer.
++
++Retrieval quality is evaluated in `evaluation/rag_cases.json` +
++`evaluation/evaluate_rag.py` — see `evaluation/README.md`.
++
+ <p align="center">
+ <img src="screenshots/12-ai-health-chat.png" width="900">
+ </p>
+diff --git a/evaluation/README.md b/evaluation/README.md
+index 5ad4158..8b7a715 100644
+--- a/evaluation/README.md
++++ b/evaluation/README.md
+@@ -63,7 +63,23 @@ the eval rather than by manual spot-checking.
+ 
+ ## RAG evaluation
+ 
+-This harness only covers the triage pipeline. A separate `rag_cases.json` +
+-evaluation script (measuring retrieval relevance and answer grounding) should be
+-added once the RAG/citation feature from the roadmap (Section 7) is built —
+-there's currently no retrieval system in the codebase to evaluate yet.
++`rag_cases.json` + `evaluate_rag.py` cover the retrieval layer of the AI Health
++Chat feature (`tools/chat_rag_tools.py`): 13 labeled cases spanning direct
++keyword matches, each of the hand-picked clinical-synonym mappings (diabetes,
++kidney, heart, thyroid, bleeding/bruising, infection, blood pressure, liver),
++multi-chunk ranking with distractors, and the "no confident match" /
++empty-records paths that should trigger (or correctly skip) the PubMed
++fallback.
++
++```bash
++python evaluation/evaluate_rag.py                 # retrieval-only, no API key needed
++python evaluation/evaluate_rag.py --dry-run        # validate the case file, no retrieval calls
++python evaluation/evaluate_rag.py --with-llm       # + a small grounding spot-check (costs Groq API calls)
++```
++
++Reports three numbers: retrieval recall (did the expected chunk get retrieved
++at all), confidence accuracy (does the `confident` flag correctly gate the
++PubMed fallback), and precision (how much of what got retrieved was actually
++relevant). The always-on companion `tests/test_rag_retrieval.py` runs the
++core behaviors as fast CI unit tests, same as `test_safety_gate.py`.
++
+diff --git a/evaluation/evaluate_rag.py b/evaluation/evaluate_rag.py
+new file mode 100644
+index 0000000..beb6700
+--- /dev/null
++++ b/evaluation/evaluate_rag.py
+@@ -0,0 +1,227 @@
++"""
++evaluation/evaluate_rag.py
++----------------------------
++Runs the curated case set in evaluation/rag_cases.json through the real
++retrieve_relevant_chunks() (tools/chat_rag_tools.py) and reports:
++
++  1. Retrieval recall     -- for cases with an expected relevant source,
++                              was at least one of them actually retrieved?
++  2. Retrieval precision   -- of what got retrieved, how much was in the
++                              expected set (only scored for cases that
++                              declare a non-empty expected set)?
++  3. Confidence accuracy   -- does the retriever's own `confident` flag
++                              (used upstream to decide whether to also
++                              pull PubMed) match what each case expects?
++
++This is a *retrieval* evaluation - no LLM calls, no GROQ_API_KEY needed -
++same "instant, CI-safe, quantitative" spirit as evaluate_triage.py, just
++one layer earlier in the pipeline (retrieval, not generation).
++
++Optional --with-llm additionally runs a handful of cases through the real
++generate_chat_answer() (costs Groq API calls) as a lightweight grounding
++spot-check: does the answer actually reference a "Based on your..." /
++"Per PubMed" style citation when personal context was retrieved? This is
++NOT a full automated grounding judge (that would need a second LLM to
++grade the first one's output) - it's a cheap signal for manual review,
++same caveat evaluate_triage.py gives its own numbers.
++
++Usage:
++    python evaluation/evaluate_rag.py
++    python evaluation/evaluate_rag.py --category synonym_expansion
++    python evaluation/evaluate_rag.py --with-llm         # + grounding spot-check, costs API calls
++    python evaluation/evaluate_rag.py --dry-run          # validate the case file only
++
++Outputs (written to evaluation/results/ by default):
++    rag_run_<timestamp>.json   -- full per-case results + aggregate metrics
++    rag_report_<timestamp>.md  -- human-readable summary + failures
++"""
++
++import argparse
++import json
++import os
++import sys
++from datetime import datetime, timezone
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++if ROOT not in sys.path:
++    sys.path.insert(0, ROOT)
++
++
++def run_case(case):
++    from tools.chat_rag_tools import retrieve_relevant_chunks
++
++    retrieved, confident = retrieve_relevant_chunks(case["question"], case["chunks"])
++    retrieved_sources = [c["source"] for c in retrieved]
++
++    expected = set(case.get("expected_relevant_sources", []))
++
++    if expected:
++        hit = bool(expected & set(retrieved_sources))
++        # Precision only over chunks pulled from this case's own pool -
++        # every retrieved source should trace back to something we gave it.
++        overlap = len(expected & set(retrieved_sources))
++        precision = overlap / len(retrieved_sources) if retrieved_sources else 0.0
++    else:
++        # A case that expects nothing relevant (e.g. no_confident_match,
++        # empty_records) "passes" recall trivially - there's nothing to find.
++        hit = True
++        precision = None
++
++    confidence_correct = confident == case["expect_confident"]
++
++    return {
++        "id": case["id"],
++        "category": case["category"],
++        "question": case["question"],
++        "expected_confident": case["expect_confident"],
++        "actual_confident": confident,
++        "confidence_correct": confidence_correct,
++        "expected_relevant_sources": sorted(expected),
++        "retrieved_sources": retrieved_sources,
++        "recall_hit": hit,
++        "precision": precision,
++    }
++
++
++def run_llm_spot_check(case, llm):
++    from tools.chat_rag_tools import retrieve_relevant_chunks, generate_chat_answer
++
++    retrieved, confident = retrieve_relevant_chunks(case["question"], case["chunks"])
++    result = generate_chat_answer(case["question"], retrieved, mode="patient", llm=llm)
++
++    cites_source = any(
++        marker in result["answer"] for marker in ["Based on", "Per PubMed", "records show", "records don't show"]
++    )
++
++    return {
++        "id": case["id"],
++        "question": case["question"],
++        "answer": result["answer"],
++        "sources_returned": result["sources"],
++        "appears_to_cite": cites_source,
++    }
++
++
++def aggregate(records):
++    total = len(records)
++    recall_hits = sum(1 for r in records if r["recall_hit"])
++    confidence_correct = sum(1 for r in records if r["confidence_correct"])
++
++    precisions = [r["precision"] for r in records if r["precision"] is not None]
++    avg_precision = sum(precisions) / len(precisions) if precisions else None
++
++    return {
++        "total_cases": total,
++        "retrieval_recall_pct": round(100 * recall_hits / total, 1) if total else 0.0,
++        "confidence_accuracy_pct": round(100 * confidence_correct / total, 1) if total else 0.0,
++        "avg_precision_pct": round(100 * avg_precision, 1) if avg_precision is not None else None,
++    }
++
++
++def write_report(records, metrics, output_dir, timestamp, llm_records=None):
++    os.makedirs(output_dir, exist_ok=True)
++
++    json_path = os.path.join(output_dir, f"rag_run_{timestamp}.json")
++    with open(json_path, "w", encoding="utf-8") as f:
++        json.dump(
++            {"metrics": metrics, "records": records, "llm_spot_check": llm_records or []},
++            f, indent=2,
++        )
++
++    md_path = os.path.join(output_dir, f"rag_report_{timestamp}.md")
++    lines = [
++        f"# RAG Retrieval Evaluation — {timestamp}",
++        "",
++        "## Aggregate metrics",
++        "",
++    ]
++    for k, v in metrics.items():
++        lines.append(f"- **{k}**: {v}")
++
++    failures = [r for r in records if not r["recall_hit"] or not r["confidence_correct"]]
++    if failures:
++        lines += ["", "## Failures", ""]
++        for r in failures:
++            lines.append(f"### {r['id']} ({r['category']})")
++            lines.append(f"- question: {r['question']}")
++            lines.append(f"- expected_confident={r['expected_confident']} actual_confident={r['actual_confident']}")
++            lines.append(f"- expected_sources={r['expected_relevant_sources']}")
++            lines.append(f"- retrieved_sources={r['retrieved_sources']}")
++            lines.append("")
++
++    if llm_records:
++        lines += ["", "## LLM grounding spot-check (manual review)", ""]
++        for r in llm_records:
++            lines.append(f"### {r['id']}")
++            lines.append(f"- question: {r['question']}")
++            lines.append(f"- appears_to_cite: {r['appears_to_cite']}")
++            lines.append(f"- answer: {r['answer']}")
++            lines.append("")
++
++    with open(md_path, "w", encoding="utf-8") as f:
++        f.write("\n".join(lines))
++
++    return json_path, md_path
++
++
++def main():
++    parser = argparse.ArgumentParser(description="Evaluate MediAgent AI's RAG retrieval quality.")
++    parser.add_argument("--cases", default=os.path.join(ROOT, "evaluation", "rag_cases.json"))
++    parser.add_argument("--output", default=os.path.join(ROOT, "evaluation", "results"))
++    parser.add_argument("--category", default=None)
++    parser.add_argument("--dry-run", action="store_true", help="Validate the case file and exit, no retrieval calls.")
++    parser.add_argument("--with-llm", action="store_true", help="Also run a small grounding spot-check via the real LLM (costs Groq API calls).")
++    args = parser.parse_args()
++
++    with open(args.cases, encoding="utf-8") as f:
++        data = json.load(f)
++    cases = data["cases"]
++
++    if args.category:
++        cases = [c for c in cases if c["category"] == args.category]
++
++    if args.dry_run:
++        required = {"id", "category", "question", "chunks", "expect_confident", "expected_relevant_sources"}
++        bad = [c["id"] for c in cases if not required.issubset(c.keys())]
++        print(f"Validated {len(cases)} cases.")
++        if bad:
++            print(f"Missing required fields in: {bad}")
++            sys.exit(1)
++        print("All cases OK. (No retrieval calls made.)")
++        return
++
++    print(f"Running {len(cases)} case(s) through retrieve_relevant_chunks (no LLM calls)...\n")
++
++    records = [run_case(c) for c in cases]
++    metrics = aggregate(records)
++
++    for r in records:
++        status = "OK" if (r["recall_hit"] and r["confidence_correct"]) else "MISS"
++        print(f"[{status}] {r['id']} ({r['category']}) confident={r['actual_confident']} "
++              f"retrieved={len(r['retrieved_sources'])}")
++
++    llm_records = None
++    if args.with_llm:
++        if not os.getenv("GROQ_API_KEY"):
++            print("\nWARNING: --with-llm requested but GROQ_API_KEY is not set. Skipping grounding spot-check.")
++        else:
++            from langchain_groq import ChatGroq
++            llm = ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"), temperature=0.2)
++            spot_check_cases = [c for c in cases if c.get("expected_relevant_sources")][:5]
++            print(f"\nRunning LLM grounding spot-check on {len(spot_check_cases)} case(s)...")
++            llm_records = [run_llm_spot_check(c, llm) for c in spot_check_cases]
++
++    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
++    json_path, md_path = write_report(records, metrics, args.output, timestamp, llm_records)
++
++    print("\n" + "=" * 60)
++    print("SUMMARY")
++    print("=" * 60)
++    for k, v in metrics.items():
++        print(f"{k:30s}: {v}")
++    print(f"\nFull results: {json_path}")
++    print(f"Report:       {md_path}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/evaluation/rag_cases.json b/evaluation/rag_cases.json
+new file mode 100644
+index 0000000..acdd90a
+--- /dev/null
++++ b/evaluation/rag_cases.json
+@@ -0,0 +1,161 @@
++{
++  "cases": [
++    {
++      "id": "RAG-001",
++      "category": "direct_match",
++      "description": "Direct keyword overlap between question and a single lab chunk",
++      "question": "What was my hemoglobin level?",
++      "chunks": [
++        {"text": "Extracted lab values - Hemoglobin: 10.2 g/dL (flag: Low, reference range: 13.0-17.0); WBC: 7200 /uL (flag: Normal, reference range: 4000-11000)", "source": "Lab report from 2026-03-01 (cbc_march.pdf)"},
++        {"text": "Symptoms: mild ankle sprain. Severity: Mild. Department: Orthopedics. Summary: soft tissue injury. Recommendation: rest and ice.", "source": "Symptom checker case from 2026-01-10"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-03-01 (cbc_march.pdf)"]
++    },
++    {
++      "id": "RAG-002",
++      "category": "synonym_expansion",
++      "description": "Lay term 'diabetes' should retrieve a Fasting Blood Sugar chunk via CLINICAL_SYNONYMS",
++      "question": "Do I have diabetes?",
++      "chunks": [
++        {"text": "Extracted lab values - Fasting Blood Sugar: 138 mg/dL (flag: High, reference range: 70-100)", "source": "Lab report from 2026-04-12 (metabolic_panel.pdf)"},
++        {"text": "Symptoms: seasonal cough. Severity: Mild. Department: General Medicine. Summary: viral URI. Recommendation: rest and fluids.", "source": "Symptom checker case from 2026-02-02"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-04-12 (metabolic_panel.pdf)"]
++    },
++    {
++      "id": "RAG-003",
++      "category": "synonym_expansion",
++      "description": "'kidney' should retrieve a creatinine chunk",
++      "question": "Is my kidney function okay?",
++      "chunks": [
++        {"text": "Extracted lab values - Creatinine: 1.4 mg/dL (flag: High, reference range: 0.6-1.2)", "source": "Lab report from 2026-05-05 (renal_panel.pdf)"},
++        {"text": "Extracted lab values - Hemoglobin: 14.1 g/dL (flag: Normal, reference range: 13.0-17.0)", "source": "Lab report from 2026-05-05 (cbc.pdf)"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-05-05 (renal_panel.pdf)"]
++    },
++    {
++      "id": "RAG-004",
++      "category": "synonym_expansion",
++      "description": "'heart' / cardiac concern should retrieve a cholesterol/lipid chunk",
++      "question": "Should I be worried about my heart given these results?",
++      "chunks": [
++        {"text": "Extracted lab values - LDL Cholesterol: 165 mg/dL (flag: High, reference range: 0-100); HDL Cholesterol: 38 mg/dL (flag: Low, reference range: 40-60)", "source": "Lab report from 2026-06-01 (lipid_panel.pdf)"},
++        {"text": "Symptoms: sprained wrist. Severity: Mild. Department: Orthopedics. Summary: minor sprain. Recommendation: rest.", "source": "Symptom checker case from 2026-01-20"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-06-01 (lipid_panel.pdf)"]
++    },
++    {
++      "id": "RAG-005",
++      "category": "synonym_expansion",
++      "description": "'thyroid' should retrieve a TSH chunk",
++      "question": "What's going on with my thyroid?",
++      "chunks": [
++        {"text": "Extracted lab values - TSH: 6.8 uIU/mL (flag: High, reference range: 0.4-4.0)", "source": "Lab report from 2026-06-15 (thyroid_panel.pdf)"},
++        {"text": "Extracted lab values - Platelets: 250000 /uL (flag: Normal, reference range: 150000-450000)", "source": "Lab report from 2026-06-15 (cbc.pdf)"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-06-15 (thyroid_panel.pdf)"]
++    },
++    {
++      "id": "RAG-006",
++      "category": "synonym_expansion",
++      "description": "'bleeding' concern should retrieve a platelet chunk",
++      "question": "I've been bruising easily, is that linked to my bloodwork?",
++      "chunks": [
++        {"text": "Extracted lab values - Platelets: 95000 /uL (flag: Low, reference range: 150000-450000)", "source": "Lab report from 2026-07-01 (cbc.pdf)"},
++        {"text": "Symptoms: mild headache. Severity: Mild. Department: General Medicine. Summary: tension headache. Recommendation: rest and hydration.", "source": "Symptom checker case from 2026-06-20"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-07-01 (cbc.pdf)"]
++    },
++    {
++      "id": "RAG-007",
++      "category": "synonym_expansion",
++      "description": "'infection' / immune concern should retrieve a WBC chunk",
++      "question": "Does my bloodwork show any signs of infection?",
++      "chunks": [
++        {"text": "Extracted lab values - WBC: 14200 /uL (flag: High, reference range: 4000-11000)", "source": "Lab report from 2026-07-10 (cbc.pdf)"},
++        {"text": "Extracted lab values - Creatinine: 0.9 mg/dL (flag: Normal, reference range: 0.6-1.2)", "source": "Lab report from 2026-07-10 (renal.pdf)"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-07-10 (cbc.pdf)"]
++    },
++    {
++      "id": "RAG-008",
++      "category": "synonym_expansion",
++      "description": "'blood pressure' should retrieve a hypertension-related case chunk",
++      "question": "How has my blood pressure been trending?",
++      "chunks": [
++        {"text": "Symptoms: routine follow-up. Severity: Mild. Department: General Medicine. Summary: hypertension monitoring, reading 148/92. Recommendation: lifestyle changes and follow-up.", "source": "Symptom checker case from 2026-07-15"},
++        {"text": "Extracted lab values - Hemoglobin: 13.5 g/dL (flag: Normal, reference range: 13.0-17.0)", "source": "Lab report from 2026-07-15 (cbc.pdf)"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Symptom checker case from 2026-07-15"]
++    },
++    {
++      "id": "RAG-009",
++      "category": "multi_chunk_ranking",
++      "description": "Multiple plausible chunks - the most specific match should be ranked first",
++      "question": "What did my most recent CBC show for anemia?",
++      "chunks": [
++        {"text": "Extracted lab values - Hemoglobin: 9.8 g/dL (flag: Low, reference range: 13.0-17.0); RBC: 3.2 million/uL (flag: Low, reference range: 4.5-5.5)", "source": "Lab report from 2026-08-01 (cbc_august.pdf)"},
++        {"text": "Extracted lab values - LDL Cholesterol: 110 mg/dL (flag: Normal, reference range: 0-130)", "source": "Lab report from 2026-08-01 (lipid.pdf)"},
++        {"text": "Symptoms: fatigue and pale skin. Severity: Moderate. Department: General Medicine. Summary: possible anemia workup recommended. Recommendation: CBC and iron studies.", "source": "Symptom checker case from 2026-07-28"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-08-01 (cbc_august.pdf)", "Symptom checker case from 2026-07-28"]
++    },
++    {
++      "id": "RAG-010",
++      "category": "no_confident_match",
++      "description": "General nutrition question with no personal record overlap - should NOT be confident, so the PubMed fallback triggers",
++      "question": "What foods are generally good for heart health?",
++      "chunks": [
++        {"text": "Symptoms: twisted ankle. Severity: Mild. Department: Orthopedics. Summary: soft tissue sprain. Recommendation: RICE protocol.", "source": "Symptom checker case from 2026-05-11"},
++        {"text": "Extracted lab values - Vitamin D: 22 ng/mL (flag: Low, reference range: 30-100)", "source": "Lab report from 2026-05-11 (vitamin_panel.pdf)"}
++      ],
++      "expect_confident": false,
++      "expected_relevant_sources": []
++    },
++    {
++      "id": "RAG-011",
++      "category": "empty_records",
++      "description": "Patient with no chunks at all (new patient, no reports/cases yet)",
++      "question": "What do my lab results show?",
++      "chunks": [],
++      "expect_confident": false,
++      "expected_relevant_sources": []
++    },
++    {
++      "id": "RAG-012",
++      "category": "case_insensitivity",
++      "description": "Question casing/punctuation should not prevent an otherwise-strong match",
++      "question": "WHAT WAS MY CREATININE???",
++      "chunks": [
++        {"text": "Extracted lab values - Creatinine: 1.1 mg/dL (flag: Normal, reference range: 0.6-1.2)", "source": "Lab report from 2026-08-20 (renal.pdf)"},
++        {"text": "Symptoms: seasonal allergies. Severity: Mild. Department: General Medicine. Summary: allergic rhinitis. Recommendation: antihistamines as needed.", "source": "Symptom checker case from 2026-08-19"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-08-20 (renal.pdf)"]
++    },
++    {
++      "id": "RAG-013",
++      "category": "distractor_heavy",
++      "description": "Many distractor chunks - retrieval should still surface the one relevant chunk in top_k",
++      "question": "What did my liver enzymes show?",
++      "chunks": [
++        {"text": "Extracted lab values - ALT: 78 U/L (flag: High, reference range: 7-56); AST: 65 U/L (flag: High, reference range: 8-48)", "source": "Lab report from 2026-09-01 (liver_panel.pdf)"},
++        {"text": "Symptoms: minor cut on finger. Severity: Mild. Department: General Medicine. Summary: superficial laceration. Recommendation: clean and bandage.", "source": "Symptom checker case from 2026-01-05"},
++        {"text": "Symptoms: seasonal cough. Severity: Mild. Department: General Medicine. Summary: viral URI. Recommendation: rest and fluids.", "source": "Symptom checker case from 2026-02-02"},
++        {"text": "Extracted lab values - Vitamin B12: 450 pg/mL (flag: Normal, reference range: 200-900)", "source": "Lab report from 2026-03-15 (vitamin_panel.pdf)"},
++        {"text": "Symptoms: mild ankle sprain. Severity: Mild. Department: Orthopedics. Summary: soft tissue injury. Recommendation: rest and ice.", "source": "Symptom checker case from 2026-01-10"}
++      ],
++      "expect_confident": true,
++      "expected_relevant_sources": ["Lab report from 2026-09-01 (liver_panel.pdf)"]
++    }
++  ]
++}
+diff --git a/tests/test_rag_retrieval.py b/tests/test_rag_retrieval.py
+new file mode 100644
+index 0000000..f205b52
+--- /dev/null
++++ b/tests/test_rag_retrieval.py
+@@ -0,0 +1,119 @@
++"""
++tests/test_rag_retrieval.py
++-----------------------------
++Unit tests for tools.chat_rag_tools.retrieve_relevant_chunks() - pure
++TF-IDF/sklearn logic over in-memory chunk lists, no DB/LLM/network calls,
++so this runs in CI without GROQ_API_KEY (same as test_safety_gate.py and
++test_authorization.py).
++
++This is the fast, always-on companion to evaluation/evaluate_rag.py,
++which runs the full labeled case set (evaluation/rag_cases.json) and
++produces a report; these tests just guard the core behaviors so a
++regression fails the build immediately.
++
++Run:
++    pytest tests/test_rag_retrieval.py -v
++"""
++
++import os
++import sys
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++if ROOT not in sys.path:
++    sys.path.insert(0, ROOT)
++
++from tools.chat_rag_tools import retrieve_relevant_chunks
++
++
++LAB_CHUNK = {
++    "text": "Extracted lab values - Hemoglobin: 10.2 g/dL (flag: Low, reference range: 13.0-17.0)",
++    "source": "Lab report from 2026-03-01",
++}
++UNRELATED_CASE_CHUNK = {
++    "text": "Symptoms: mild ankle sprain. Severity: Mild. Department: Orthopedics.",
++    "source": "Symptom checker case from 2026-01-10",
++}
++
++
++def test_empty_chunks_returns_not_confident():
++    retrieved, confident = retrieve_relevant_chunks("what were my results?", [])
++    assert retrieved == []
++    assert confident is False
++
++
++def test_direct_keyword_match_is_confident():
++    retrieved, confident = retrieve_relevant_chunks(
++        "What was my hemoglobin level?", [LAB_CHUNK, UNRELATED_CASE_CHUNK]
++    )
++    assert confident is True
++    assert retrieved[0]["source"] == "Lab report from 2026-03-01"
++
++
++def test_diabetes_synonym_expansion_matches_blood_sugar_chunk():
++    sugar_chunk = {
++        "text": "Extracted lab values - Fasting Blood Sugar: 138 mg/dL (flag: High)",
++        "source": "Lab report from 2026-04-12",
++    }
++    retrieved, confident = retrieve_relevant_chunks(
++        "Do I have diabetes?", [sugar_chunk, UNRELATED_CASE_CHUNK]
++    )
++    assert confident is True
++    assert any(c["source"] == "Lab report from 2026-04-12" for c in retrieved)
++
++
++def test_bruising_synonym_matches_platelet_chunk():
++    platelet_chunk = {
++        "text": "Extracted lab values - Platelets: 95000 /uL (flag: Low)",
++        "source": "Lab report from 2026-07-01",
++    }
++    retrieved, confident = retrieve_relevant_chunks(
++        "I've been bruising easily, is that linked to my bloodwork?",
++        [platelet_chunk, UNRELATED_CASE_CHUNK],
++    )
++    assert confident is True
++    assert any(c["source"] == "Lab report from 2026-07-01" for c in retrieved)
++
++
++def test_liver_synonym_matches_alt_ast_chunk_even_with_distractors():
++    liver_chunk = {
++        "text": "Extracted lab values - ALT: 78 U/L (flag: High); AST: 65 U/L (flag: High)",
++        "source": "Lab report from 2026-09-01",
++    }
++    distractors = [
++        {"text": f"Symptoms: minor issue {i}. Severity: Mild. Department: General Medicine.",
++         "source": f"Symptom checker case from 2026-0{i}-05"}
++        for i in range(1, 5)
++    ]
++    retrieved, confident = retrieve_relevant_chunks(
++        "What did my liver enzymes show?", [liver_chunk] + distractors
++    )
++    assert confident is True
++    assert retrieved[0]["source"] == "Lab report from 2026-09-01"
++
++
++def test_unrelated_general_question_is_not_confident():
++    retrieved, confident = retrieve_relevant_chunks(
++        "What foods are generally good for heart health?",
++        [UNRELATED_CASE_CHUNK],
++    )
++    assert confident is False
++
++
++def test_case_insensitive_and_punctuation_tolerant():
++    retrieved, confident = retrieve_relevant_chunks(
++        "WHAT WAS MY HEMOGLOBIN???", [LAB_CHUNK, UNRELATED_CASE_CHUNK]
++    )
++    assert confident is True
++    assert retrieved[0]["source"] == "Lab report from 2026-03-01"
++
++
++def test_top_k_is_respected():
++    chunks = [
++        {"text": f"Extracted lab values - Hemoglobin: {10 + i} g/dL (flag: Low)",
++         "source": f"Lab report {i}"}
++        for i in range(10)
++    ]
++    retrieved, confident = retrieve_relevant_chunks(
++        "What was my hemoglobin?", chunks, top_k=4
++    )
++    assert len(retrieved) <= 4
+diff --git a/tools/chat_rag_tools.py b/tools/chat_rag_tools.py
+index 52c57e6..f60dd1e 100644
+--- a/tools/chat_rag_tools.py
++++ b/tools/chat_rag_tools.py
+@@ -151,6 +151,9 @@ CLINICAL_SYNONYMS = {
+     "thyroid": ["tsh", "t3", "t4"],
+     "bleeding": ["platelet", "platelets"],
+     "clotting": ["platelet", "platelets"],
++    "bruising": ["platelet", "platelets", "bleeding"],
++    "liver": ["alt", "ast", "liver enzymes", "hepatic"],
++    "hepatic": ["alt", "ast", "liver", "liver enzymes"],
+ }
+ 
+ 

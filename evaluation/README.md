@@ -63,7 +63,23 @@ the eval rather than by manual spot-checking.
 
 ## RAG evaluation
 
-This harness only covers the triage pipeline. A separate `rag_cases.json` +
-evaluation script (measuring retrieval relevance and answer grounding) should be
-added once the RAG/citation feature from the roadmap (Section 7) is built —
-there's currently no retrieval system in the codebase to evaluate yet.
+`rag_cases.json` + `evaluate_rag.py` cover the retrieval layer of the AI Health
+Chat feature (`tools/chat_rag_tools.py`): 13 labeled cases spanning direct
+keyword matches, each of the hand-picked clinical-synonym mappings (diabetes,
+kidney, heart, thyroid, bleeding/bruising, infection, blood pressure, liver),
+multi-chunk ranking with distractors, and the "no confident match" /
+empty-records paths that should trigger (or correctly skip) the PubMed
+fallback.
+
+```bash
+python evaluation/evaluate_rag.py                 # retrieval-only, no API key needed
+python evaluation/evaluate_rag.py --dry-run        # validate the case file, no retrieval calls
+python evaluation/evaluate_rag.py --with-llm       # + a small grounding spot-check (costs Groq API calls)
+```
+
+Reports three numbers: retrieval recall (did the expected chunk get retrieved
+at all), confidence accuracy (does the `confident` flag correctly gate the
+PubMed fallback), and precision (how much of what got retrieved was actually
+relevant). The always-on companion `tests/test_rag_retrieval.py` runs the
+core behaviors as fast CI unit tests, same as `test_safety_gate.py`.
+

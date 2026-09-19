@@ -1,0 +1,161 @@
+{
+  "cases": [
+    {
+      "id": "RAG-001",
+      "category": "direct_match",
+      "description": "Direct keyword overlap between question and a single lab chunk",
+      "question": "What was my hemoglobin level?",
+      "chunks": [
+        {"text": "Extracted lab values - Hemoglobin: 10.2 g/dL (flag: Low, reference range: 13.0-17.0); WBC: 7200 /uL (flag: Normal, reference range: 4000-11000)", "source": "Lab report from 2026-03-01 (cbc_march.pdf)"},
+        {"text": "Symptoms: mild ankle sprain. Severity: Mild. Department: Orthopedics. Summary: soft tissue injury. Recommendation: rest and ice.", "source": "Symptom checker case from 2026-01-10"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-03-01 (cbc_march.pdf)"]
+    },
+    {
+      "id": "RAG-002",
+      "category": "synonym_expansion",
+      "description": "Lay term 'diabetes' should retrieve a Fasting Blood Sugar chunk via CLINICAL_SYNONYMS",
+      "question": "Do I have diabetes?",
+      "chunks": [
+        {"text": "Extracted lab values - Fasting Blood Sugar: 138 mg/dL (flag: High, reference range: 70-100)", "source": "Lab report from 2026-04-12 (metabolic_panel.pdf)"},
+        {"text": "Symptoms: seasonal cough. Severity: Mild. Department: General Medicine. Summary: viral URI. Recommendation: rest and fluids.", "source": "Symptom checker case from 2026-02-02"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-04-12 (metabolic_panel.pdf)"]
+    },
+    {
+      "id": "RAG-003",
+      "category": "synonym_expansion",
+      "description": "'kidney' should retrieve a creatinine chunk",
+      "question": "Is my kidney function okay?",
+      "chunks": [
+        {"text": "Extracted lab values - Creatinine: 1.4 mg/dL (flag: High, reference range: 0.6-1.2)", "source": "Lab report from 2026-05-05 (renal_panel.pdf)"},
+        {"text": "Extracted lab values - Hemoglobin: 14.1 g/dL (flag: Normal, reference range: 13.0-17.0)", "source": "Lab report from 2026-05-05 (cbc.pdf)"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-05-05 (renal_panel.pdf)"]
+    },
+    {
+      "id": "RAG-004",
+      "category": "synonym_expansion",
+      "description": "'heart' / cardiac concern should retrieve a cholesterol/lipid chunk",
+      "question": "Should I be worried about my heart given these results?",
+      "chunks": [
+        {"text": "Extracted lab values - LDL Cholesterol: 165 mg/dL (flag: High, reference range: 0-100); HDL Cholesterol: 38 mg/dL (flag: Low, reference range: 40-60)", "source": "Lab report from 2026-06-01 (lipid_panel.pdf)"},
+        {"text": "Symptoms: sprained wrist. Severity: Mild. Department: Orthopedics. Summary: minor sprain. Recommendation: rest.", "source": "Symptom checker case from 2026-01-20"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-06-01 (lipid_panel.pdf)"]
+    },
+    {
+      "id": "RAG-005",
+      "category": "synonym_expansion",
+      "description": "'thyroid' should retrieve a TSH chunk",
+      "question": "What's going on with my thyroid?",
+      "chunks": [
+        {"text": "Extracted lab values - TSH: 6.8 uIU/mL (flag: High, reference range: 0.4-4.0)", "source": "Lab report from 2026-06-15 (thyroid_panel.pdf)"},
+        {"text": "Extracted lab values - Platelets: 250000 /uL (flag: Normal, reference range: 150000-450000)", "source": "Lab report from 2026-06-15 (cbc.pdf)"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-06-15 (thyroid_panel.pdf)"]
+    },
+    {
+      "id": "RAG-006",
+      "category": "synonym_expansion",
+      "description": "'bleeding' concern should retrieve a platelet chunk",
+      "question": "I've been bruising easily, is that linked to my bloodwork?",
+      "chunks": [
+        {"text": "Extracted lab values - Platelets: 95000 /uL (flag: Low, reference range: 150000-450000)", "source": "Lab report from 2026-07-01 (cbc.pdf)"},
+        {"text": "Symptoms: mild headache. Severity: Mild. Department: General Medicine. Summary: tension headache. Recommendation: rest and hydration.", "source": "Symptom checker case from 2026-06-20"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-07-01 (cbc.pdf)"]
+    },
+    {
+      "id": "RAG-007",
+      "category": "synonym_expansion",
+      "description": "'infection' / immune concern should retrieve a WBC chunk",
+      "question": "Does my bloodwork show any signs of infection?",
+      "chunks": [
+        {"text": "Extracted lab values - WBC: 14200 /uL (flag: High, reference range: 4000-11000)", "source": "Lab report from 2026-07-10 (cbc.pdf)"},
+        {"text": "Extracted lab values - Creatinine: 0.9 mg/dL (flag: Normal, reference range: 0.6-1.2)", "source": "Lab report from 2026-07-10 (renal.pdf)"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-07-10 (cbc.pdf)"]
+    },
+    {
+      "id": "RAG-008",
+      "category": "synonym_expansion",
+      "description": "'blood pressure' should retrieve a hypertension-related case chunk",
+      "question": "How has my blood pressure been trending?",
+      "chunks": [
+        {"text": "Symptoms: routine follow-up. Severity: Mild. Department: General Medicine. Summary: hypertension monitoring, reading 148/92. Recommendation: lifestyle changes and follow-up.", "source": "Symptom checker case from 2026-07-15"},
+        {"text": "Extracted lab values - Hemoglobin: 13.5 g/dL (flag: Normal, reference range: 13.0-17.0)", "source": "Lab report from 2026-07-15 (cbc.pdf)"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Symptom checker case from 2026-07-15"]
+    },
+    {
+      "id": "RAG-009",
+      "category": "multi_chunk_ranking",
+      "description": "Multiple plausible chunks - the most specific match should be ranked first",
+      "question": "What did my most recent CBC show for anemia?",
+      "chunks": [
+        {"text": "Extracted lab values - Hemoglobin: 9.8 g/dL (flag: Low, reference range: 13.0-17.0); RBC: 3.2 million/uL (flag: Low, reference range: 4.5-5.5)", "source": "Lab report from 2026-08-01 (cbc_august.pdf)"},
+        {"text": "Extracted lab values - LDL Cholesterol: 110 mg/dL (flag: Normal, reference range: 0-130)", "source": "Lab report from 2026-08-01 (lipid.pdf)"},
+        {"text": "Symptoms: fatigue and pale skin. Severity: Moderate. Department: General Medicine. Summary: possible anemia workup recommended. Recommendation: CBC and iron studies.", "source": "Symptom checker case from 2026-07-28"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-08-01 (cbc_august.pdf)", "Symptom checker case from 2026-07-28"]
+    },
+    {
+      "id": "RAG-010",
+      "category": "no_confident_match",
+      "description": "General nutrition question with no personal record overlap - should NOT be confident, so the PubMed fallback triggers",
+      "question": "What foods are generally good for heart health?",
+      "chunks": [
+        {"text": "Symptoms: twisted ankle. Severity: Mild. Department: Orthopedics. Summary: soft tissue sprain. Recommendation: RICE protocol.", "source": "Symptom checker case from 2026-05-11"},
+        {"text": "Extracted lab values - Vitamin D: 22 ng/mL (flag: Low, reference range: 30-100)", "source": "Lab report from 2026-05-11 (vitamin_panel.pdf)"}
+      ],
+      "expect_confident": false,
+      "expected_relevant_sources": []
+    },
+    {
+      "id": "RAG-011",
+      "category": "empty_records",
+      "description": "Patient with no chunks at all (new patient, no reports/cases yet)",
+      "question": "What do my lab results show?",
+      "chunks": [],
+      "expect_confident": false,
+      "expected_relevant_sources": []
+    },
+    {
+      "id": "RAG-012",
+      "category": "case_insensitivity",
+      "description": "Question casing/punctuation should not prevent an otherwise-strong match",
+      "question": "WHAT WAS MY CREATININE???",
+      "chunks": [
+        {"text": "Extracted lab values - Creatinine: 1.1 mg/dL (flag: Normal, reference range: 0.6-1.2)", "source": "Lab report from 2026-08-20 (renal.pdf)"},
+        {"text": "Symptoms: seasonal allergies. Severity: Mild. Department: General Medicine. Summary: allergic rhinitis. Recommendation: antihistamines as needed.", "source": "Symptom checker case from 2026-08-19"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-08-20 (renal.pdf)"]
+    },
+    {
+      "id": "RAG-013",
+      "category": "distractor_heavy",
+      "description": "Many distractor chunks - retrieval should still surface the one relevant chunk in top_k",
+      "question": "What did my liver enzymes show?",
+      "chunks": [
+        {"text": "Extracted lab values - ALT: 78 U/L (flag: High, reference range: 7-56); AST: 65 U/L (flag: High, reference range: 8-48)", "source": "Lab report from 2026-09-01 (liver_panel.pdf)"},
+        {"text": "Symptoms: minor cut on finger. Severity: Mild. Department: General Medicine. Summary: superficial laceration. Recommendation: clean and bandage.", "source": "Symptom checker case from 2026-01-05"},
+        {"text": "Symptoms: seasonal cough. Severity: Mild. Department: General Medicine. Summary: viral URI. Recommendation: rest and fluids.", "source": "Symptom checker case from 2026-02-02"},
+        {"text": "Extracted lab values - Vitamin B12: 450 pg/mL (flag: Normal, reference range: 200-900)", "source": "Lab report from 2026-03-15 (vitamin_panel.pdf)"},
+        {"text": "Symptoms: mild ankle sprain. Severity: Mild. Department: Orthopedics. Summary: soft tissue injury. Recommendation: rest and ice.", "source": "Symptom checker case from 2026-01-10"}
+      ],
+      "expect_confident": true,
+      "expected_relevant_sources": ["Lab report from 2026-09-01 (liver_panel.pdf)"]
+    }
+  ]
+}
