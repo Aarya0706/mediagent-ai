@@ -1,0 +1,47 @@
+name: Tests
+
+# Runs on every push and every pull request against main, so a broken
+# change is caught before it lands rather than discovered on Streamlit
+# Cloud. Deliberately does NOT need GROQ_API_KEY or any other secret:
+# tests/test_authorization.py and tests/test_safety_gate.py are both
+# pure-function unit tests with no LLM/network calls, by design - see
+# their module docstrings. evaluation/evaluate_triage.py (the ~60-case
+# LLM eval suite) is intentionally NOT run here; it costs real Groq API
+# calls per run and belongs in a separate, manually-triggered workflow
+# rather than on every commit.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      # Real-bugs-only ruleset (syntax errors, undefined names, unused
+      # imports) rather than a full style pass — see repo history for
+      # why: a strict default ruleset would fail immediately on this
+      # codebase's existing formatting, unrelated to actual bugs.
+      - name: Lint (ruff)
+        run: ruff check . --select E9,F --output-format=github
+
+      - name: Run tests
+        run: pytest tests/ -v

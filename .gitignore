@@ -17,3 +17,5 @@ reports/
 
 # Local database
 data/hospital.db
+
+logs/

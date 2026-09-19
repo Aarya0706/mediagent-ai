@@ -1,7 +1,6 @@
 import os
 import json
 import sqlite3
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")

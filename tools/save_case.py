@@ -259,6 +259,73 @@ def get_all_cases():
 
 
 # ============================================================
+# GET CASES FOR ONE PATIENT (DB-level ownership scoping)
+# ============================================================
+#
+# Security note: this exists because get_all_cases() must never be
+# called on behalf of a patient-role session. A patient-role user's
+# view of case history has to be enforced by a WHERE clause here, not
+# by filtering the full result set in Python/UI after the fact or by
+# hiding a tab - either of those still pulls every other patient's
+# record into memory and one missed branch away from being shown.
+# Callers should combine this with tools.authorization.require_patient_access().
+
+def get_cases_for_patient(patient_name):
+    """
+    Returns only the cases belonging to patient_name, newest first.
+
+    Use this (never get_all_cases()) for any view a patient-role
+    session can reach.
+    """
+
+    patient_name = (patient_name or "").strip()
+    if not patient_name:
+        return []
+
+    with get_connection() as conn:
+
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+
+                id,
+
+                patient_name,
+
+                symptoms,
+
+                severity,
+
+                department,
+
+                summary,
+
+                recommendation,
+
+                created_at,
+
+                status
+
+            FROM cases
+
+            WHERE LOWER(patient_name) = LOWER(?)
+
+            ORDER BY datetime(created_at) DESC, id DESC
+            """,
+            (patient_name,),
+        )
+
+        cases = cursor.fetchall()
+
+    return [
+        dict(case)
+        for case in cases
+    ]
+
+
+# ============================================================
 # UPDATE CASE STATUS
 # ============================================================
 

@@ -14,6 +14,7 @@ Usage:
 """
 
 import re
+from agents.safety_gate import apply_safety_gate
 from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.output_parser import StrOutputParser
@@ -758,7 +759,7 @@ def run_triage_pipeline(symptoms: str, patient_context: str = "") -> dict:
     if intake_output.strip().startswith("INVALID"):
         reason = intake_output.replace("INVALID:", "").strip()
 
-        return {
+        return apply_safety_gate({
             "valid": False,
             "invalid_reason": reason,
             "intake": intake_output,
@@ -773,7 +774,7 @@ def run_triage_pipeline(symptoms: str, patient_context: str = "") -> dict:
             "guardrail_note": None,
             "raw_triage": "",
             "raw_recommend": "",
-        }
+        })
 
     # ── Step 2: AI Triage ─────────────────────────────────────────
     triage_output = triage_chain.invoke({
@@ -952,7 +953,7 @@ CONFIDENCE_SCORE: {confidence_score}"""
     actions = _parse_actions(recommend_output)
 
     # ── Final result ──────────────────────────────────────────────
-    return {
+    result = {
         "valid": True,
         "invalid_reason": None,
 
@@ -978,3 +979,10 @@ CONFIDENCE_SCORE: {confidence_score}"""
         "raw_triage": triage_output,
         "raw_recommend": recommend_output,
     }
+
+    # ── Final structural safety check ───────────────────────────────
+    # Runs after every agent, independent of apply_triage_guardrails
+    # above. Guarantees an emergency case always carries an explicit
+    # `emergency` flag and a non-empty warning, and logs if it had to
+    # step in. See agents/safety_gate.py.
+    return apply_safety_gate(result)
