@@ -1845,6 +1845,55 @@ with tab3:
             )
 
             # ---------------------------------------------------------
+            # AGENT OBSERVABILITY
+            # ---------------------------------------------------------
+            # Shown before the case queue (and before the st.stop() below
+            # for an empty queue) so it's visible even on a fresh
+            # install with zero cases yet. See agents/observability.py -
+            # this reads call metadata only, never symptom/patient text.
+            with st.expander("🔎 Agent Observability (last 24h)", expanded=False):
+                try:
+                    from agents.observability import get_observability_stats
+                    obs_stats = get_observability_stats(hours=24)
+
+                    if obs_stats["total_agent_calls"] == 0:
+                        st.caption("No agent runs recorded in this window yet.")
+                    else:
+                        oc1, oc2, oc3, oc4 = st.columns(4)
+                        oc1.metric("Triage runs", obs_stats["total_runs"])
+                        oc2.metric("Agent calls", obs_stats["total_agent_calls"])
+                        oc3.metric(
+                            "Success rate",
+                            f"{obs_stats['success_rate_pct']}%"
+                            if obs_stats["success_rate_pct"] is not None
+                            else "—",
+                        )
+                        oc4.metric(
+                            "Avg latency",
+                            f"{obs_stats['avg_latency_ms']:.0f} ms"
+                            if obs_stats["avg_latency_ms"] is not None
+                            else "—",
+                        )
+
+                        if obs_stats["by_agent"]:
+                            st.caption("By agent")
+                            st.dataframe(
+                                pd.DataFrame(obs_stats["by_agent"]),
+                                width="stretch",
+                                hide_index=True,
+                            )
+
+                        if obs_stats["recent_failures"]:
+                            st.caption("Recent failures")
+                            st.dataframe(
+                                pd.DataFrame(obs_stats["recent_failures"]),
+                                width="stretch",
+                                hide_index=True,
+                            )
+                except Exception as _obs_err:
+                    st.caption(f"Observability data unavailable: {_obs_err}")
+
+            # ---------------------------------------------------------
             # LOAD CASES
             # ---------------------------------------------------------
 
