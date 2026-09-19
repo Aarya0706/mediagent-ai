@@ -1,6 +1,5 @@
 import requests
 from groq import Groq
-import tempfile
 import time
 from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
@@ -11,13 +10,13 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from fpdf import FPDF
-from fpdf.enums import WrapMode, XPos, YPos
 from dotenv import load_dotenv
 from textwrap import dedent
 
 import sys
 import os
 from tools.save_case import save_case_to_db, update_case_status, get_all_cases, delete_case, clear_all_cases, update_case_notes
+from tools.authorization import can_access_staff_view, STAFF_ONLY_MESSAGE
 from tools.lab_report_tools import (
     ExtractionError,
     extract_text_from_file,
@@ -40,7 +39,6 @@ from tools.appointment_prep_tools import (
 from tools.chat_rag_tools import (
     get_patient_chunks,
     has_any_chunks,
-    retrieve_relevant_chunks,
     get_relevant_context,
     generate_chat_answer,
 )
@@ -50,7 +48,6 @@ from tools.health_profile_tools import (
     get_all_profiled_patients,
 )
 from tools.auth_tools import (
-    username_exists,
     create_user,
     verify_user,
     get_user_count,
@@ -94,7 +91,6 @@ def ensure_patient_name_column():
 ensure_patient_name_column()
 
 from agents.pipeline import run_triage_pipeline
-from tools.save_case import save_case_to_db
 
  
 st.set_page_config(
@@ -1184,8 +1180,8 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
                         st.exception(e)
 # ── TAB 2 ─────────────────────────────────────────────────────────
 with tab2:
-    if st.session_state.get("auth_role") == "patient":
-        st.warning("This view is for hospital staff only. Patients don't have access to the full case archive.")
+    if not can_access_staff_view():
+        st.warning(STAFF_ONLY_MESSAGE)
     else:
         st.header("📋 Patient Case History")
 

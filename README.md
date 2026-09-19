@@ -9,6 +9,7 @@
 <p align="center">
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Tests](https://github.com/Aarya0706/mediagent-ai/actions/workflows/tests.yml/badge.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Framework-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-Agentic_AI-00A67E?style=for-the-badge)
 ![Groq](https://img.shields.io/badge/Groq-Llama_3-FF6B35?style=for-the-badge)

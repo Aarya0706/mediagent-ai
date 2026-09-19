@@ -288,7 +288,7 @@ def write_report(records: list, metrics: dict, out_dir: str, timestamp: str):
 
     md_path = os.path.join(out_dir, f"report_{timestamp}.md")
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write(f"# MediAgent AI - Triage Evaluation Report\n\n")
+        f.write("# MediAgent AI - Triage Evaluation Report\n\n")
         f.write(f"Generated: {timestamp}\n\n")
         f.write("## Summary\n\n")
         f.write("| Metric | Value |\n|---|---|\n")

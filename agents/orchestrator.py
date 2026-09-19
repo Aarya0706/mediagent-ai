@@ -15,7 +15,6 @@ from tools.department_router import get_department_reference_list
 from tools.save_case import save_case_to_db
 
 # Load API key from .env
-from pathlib import Path
 
  
 

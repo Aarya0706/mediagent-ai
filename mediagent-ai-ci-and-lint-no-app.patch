@@ -1,0 +1,110 @@
+diff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml
+new file mode 100644
+index 0000000..0c21d4a
+--- /dev/null
++++ b/.github/workflows/tests.yml
+@@ -0,0 +1,47 @@
++name: Tests
++
++# Runs on every push and every pull request against main, so a broken
++# change is caught before it lands rather than discovered on Streamlit
++# Cloud. Deliberately does NOT need GROQ_API_KEY or any other secret:
++# tests/test_authorization.py and tests/test_safety_gate.py are both
++# pure-function unit tests with no LLM/network calls, by design - see
++# their module docstrings. evaluation/evaluate_triage.py (the ~60-case
++# LLM eval suite) is intentionally NOT run here; it costs real Groq API
++# calls per run and belongs in a separate, manually-triggered workflow
++# rather than on every commit.
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++    branches: [main]
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Check out repository
++        uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++          cache: "pip"
++
++      - name: Install dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install -r requirements.txt
++          pip install -r requirements-dev.txt
++
++      # Real-bugs-only ruleset (syntax errors, undefined names, unused
++      # imports) rather than a full style pass — see repo history for
++      # why: a strict default ruleset would fail immediately on this
++      # codebase's existing formatting, unrelated to actual bugs.
++      - name: Lint (ruff)
++        run: ruff check . --select E9,F --output-format=github
++
++      - name: Run tests
++        run: pytest tests/ -v
+diff --git a/README.md b/README.md
+index 17ee7b3..f20b317 100644
+--- a/README.md
++++ b/README.md
+@@ -9,6 +9,7 @@
+ <p align="center">
+ 
+ ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
++![Tests](https://github.com/Aarya0706/mediagent-ai/actions/workflows/tests.yml/badge.svg)
+ ![Streamlit](https://img.shields.io/badge/Streamlit-Framework-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+ ![LangChain](https://img.shields.io/badge/LangChain-Agentic_AI-00A67E?style=for-the-badge)
+ ![Groq](https://img.shields.io/badge/Groq-Llama_3-FF6B35?style=for-the-badge)
+diff --git a/agents/orchestrator.py b/agents/orchestrator.py
+index 61dcd69..e5dc1e0 100644
+--- a/agents/orchestrator.py
++++ b/agents/orchestrator.py
+@@ -15,7 +15,6 @@ from tools.department_router import get_department_reference_list
+ from tools.save_case import save_case_to_db
+ 
+ # Load API key from .env
+-from pathlib import Path
+ 
+  
+ 
+diff --git a/evaluation/evaluate_triage.py b/evaluation/evaluate_triage.py
+index 0244ab4..eeaea08 100644
+--- a/evaluation/evaluate_triage.py
++++ b/evaluation/evaluate_triage.py
+@@ -288,7 +288,7 @@ def write_report(records: list, metrics: dict, out_dir: str, timestamp: str):
+ 
+     md_path = os.path.join(out_dir, f"report_{timestamp}.md")
+     with open(md_path, "w", encoding="utf-8") as f:
+-        f.write(f"# MediAgent AI - Triage Evaluation Report\n\n")
++        f.write("# MediAgent AI - Triage Evaluation Report\n\n")
+         f.write(f"Generated: {timestamp}\n\n")
+         f.write("## Summary\n\n")
+         f.write("| Metric | Value |\n|---|---|\n")
+diff --git a/requirements-dev.txt b/requirements-dev.txt
+new file mode 100644
+index 0000000..4d2d22b
+--- /dev/null
++++ b/requirements-dev.txt
+@@ -0,0 +1,2 @@
++pytest==8.4.2
++ruff==0.9.6
+diff --git a/tools/appointment_prep_tools.py b/tools/appointment_prep_tools.py
+index e37e481..ea0d2f4 100644
+--- a/tools/appointment_prep_tools.py
++++ b/tools/appointment_prep_tools.py
+@@ -1,7 +1,6 @@
+ import os
+ import json
+ import sqlite3
+-from datetime import datetime
+ from zoneinfo import ZoneInfo
+ 
+ IST = ZoneInfo("Asia/Kolkata")
