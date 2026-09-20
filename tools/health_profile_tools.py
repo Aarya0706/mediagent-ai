@@ -1,25 +1,9 @@
-import os
-import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from database.connection import get_connection, DB_PATH  # noqa: F401 - DB_PATH kept for callers that import it from here
+
 IST = ZoneInfo("Asia/Kolkata")
-
-ROOT = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
-
-DB_PATH = os.path.join(
-    ROOT,
-    "data",
-    "hospital.db"
-)
-
-
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 # ============================================================
@@ -27,31 +11,21 @@ def get_connection():
 # ============================================================
 #
 # PRD 5.3 describes health_profile as 1:1 with `users` (allergies, chronic
-# conditions, height/weight). This app has no auth/users table - patients
-# are identified by name throughout (cases, lab_reports). So health_profile
-# is keyed on patient_name here instead, same identity convention as every
-# other table in this app. If real auth is added later, this is the table
-# that would need a user_id foreign key swapped in.
+# conditions, height/weight). This app identifies patients by name
+# throughout (cases, lab_reports, users.patient_name), so health_profile
+# is keyed on patient_name here too, same convention as every other
+# table - see database/schema.py's note on why that's a known,
+# deliberately-deferred limitation rather than a real user_id FK.
+#
+# The table itself is now defined once in database/schema.py and
+# created/migrated by database/migrations.py.
 
 def ensure_health_profile_table():
-    with get_connection() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS health_profile (
-                patient_name TEXT PRIMARY KEY COLLATE NOCASE,
-                age INTEGER,
-                gender TEXT,
-                blood_group TEXT,
-                height_cm REAL,
-                weight_kg REAL,
-                chronic_conditions TEXT,
-                allergies TEXT,
-                current_medications TEXT,
-                updated_at TEXT
-            )
-            """
-        )
-        conn.commit()
+    """Kept as a function (rather than inlining the call below) so
+    existing callers/imports of ensure_health_profile_table() elsewhere
+    keep working unchanged."""
+    from database.migrations import run_migrations
+    run_migrations()
 
 
 ensure_health_profile_table()

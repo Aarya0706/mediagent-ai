@@ -1,36 +1,13 @@
 import io
 import os
 import json
-import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from database.connection import get_connection, DB_PATH  # noqa: F401 - DB_PATH kept for callers that import it from here
+
 IST = ZoneInfo("Asia/Kolkata")
 
-ROOT = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
-
-DB_PATH = os.path.join(
-    ROOT,
-    "data",
-    "hospital.db"
-)
-
-os.makedirs(
-    os.path.dirname(DB_PATH),
-    exist_ok=True
-)
-
-
-# ============================================================
-# DATABASE CONNECTION (same pattern as tools/save_case.py)
-# ============================================================
-
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 # ============================================================
@@ -43,45 +20,16 @@ def get_connection():
 #   SELECT value, created_at FROM lab_values
 #   WHERE patient_name=? AND parameter=? ORDER BY created_at
 # are simple, indexed SQL - no JSON parsing needed for charts.
+#
+# Both tables are now defined once in database/schema.py and
+# created/migrated by database/migrations.py.
 
 def initialize_lab_tables():
-    with get_connection() as conn:
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS lab_reports
-            (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                patient_name TEXT NOT NULL,
-                file_name TEXT NOT NULL,
-                raw_text TEXT DEFAULT '',
-                ai_summary TEXT DEFAULT '',
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS lab_values
-            (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                report_id INTEGER NOT NULL,
-                patient_name TEXT NOT NULL,
-                parameter TEXT NOT NULL,
-                value REAL,
-                unit TEXT DEFAULT '',
-                ref_low REAL,
-                ref_high REAL,
-                flag TEXT DEFAULT 'unknown',
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (report_id) REFERENCES lab_reports (id)
-            )
-            """
-        )
-
-        conn.commit()
+    """Kept as a function (rather than inlining the call below) so
+    existing callers/imports of initialize_lab_tables() elsewhere keep
+    working unchanged."""
+    from database.migrations import run_migrations
+    run_migrations()
 
 
 # Run initialization automatically whenever imported (same pattern as save_case.py)

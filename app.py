@@ -71,24 +71,17 @@ def now_ist():
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
-DB_PATH = os.path.join(ROOT, "data", "hospital.db")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-def ensure_patient_name_column():
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
+from database.connection import DB_PATH  # noqa: F401 - kept for any code below that still references DB_PATH directly
+from database.migrations import run_migrations
 
-        cursor.execute("PRAGMA table_info(cases)")
-        columns = [row[1] for row in cursor.fetchall()]
-
-        if "patient_name" not in columns:
-            cursor.execute(
-                "ALTER TABLE cases ADD COLUMN patient_name TEXT DEFAULT 'Unknown'"
-            )
-            conn.commit()
-
-
-ensure_patient_name_column()
+# Creates every table if missing and backfills any column an existing
+# database doesn't have yet (patient_name on cases, role/patient_name
+# on users, updated_at everywhere, etc.) - single entrypoint replacing
+# what used to be this function's own inline ALTER TABLE, plus four
+# more copies of the same idea scattered across tools/*.py. See
+# database/schema.py + database/migrations.py.
+run_migrations()
 
 from agents.pipeline import run_triage_pipeline
 

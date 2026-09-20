@@ -1,7 +1,7 @@
-import os
-import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from database.connection import get_connection, DB_PATH  # noqa: F401 - DB_PATH kept for callers that import it from here
 
 
 # ============================================================
@@ -10,40 +10,6 @@ from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 
-ROOT = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
-
-DB_PATH = os.path.join(
-    ROOT,
-    "data",
-    "hospital.db"
-)
-
-os.makedirs(
-    os.path.dirname(DB_PATH),
-    exist_ok=True
-)
-
-
-# ============================================================
-# DATABASE CONNECTION
-# ============================================================
-
-def get_connection():
-    """
-    Creates a SQLite connection.
-
-    row_factory allows rows to be accessed like dictionaries:
-    row["patient_name"]
-    """
-
-    conn = sqlite3.connect(DB_PATH)
-
-    conn.row_factory = sqlite3.Row
-
-    return conn
-
 
 # ============================================================
 # INITIALIZE / MIGRATE DATABASE
@@ -51,75 +17,17 @@ def get_connection():
 
 def initialize_database():
     """
-    Creates the cases table if it does not exist.
+    Creates every table (cases included) if it doesn't exist yet, and
+    backfills any column an existing database is missing (e.g. status,
+    doctor_notes on older cases rows) without touching existing data.
 
-    Also safely adds the status column to existing databases
-    without deleting old cases.
+    Kept as a function (rather than inlining the call below) so
+    existing callers/imports of initialize_database() elsewhere keep
+    working unchanged. The actual table/column definitions now live in
+    database/schema.py, applied by database/migrations.py.
     """
-
-    with get_connection() as conn:
-
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS cases
-            (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-                patient_name TEXT NOT NULL,
-
-                symptoms TEXT NOT NULL,
-
-                severity TEXT NOT NULL,
-
-                department TEXT NOT NULL,
-
-                summary TEXT DEFAULT '',
-
-                recommendation TEXT DEFAULT '',
-
-                created_at TEXT NOT NULL,
-
-                status TEXT NOT NULL DEFAULT 'Pending'
-            )
-            """
-        )
-
-
-        # ----------------------------------------------------
-        # MIGRATE EXISTING DATABASE
-        # ----------------------------------------------------
-
-        cursor.execute("PRAGMA table_info(cases)")
-
-        columns = {
-            row["name"]
-            for row in cursor.fetchall()
-        }
-
-
-        if "status" not in columns:
-
-            cursor.execute(
-                """
-                ALTER TABLE cases
-                ADD COLUMN status TEXT NOT NULL DEFAULT 'Pending'
-                """
-            )
-
-
-        if "doctor_notes" not in columns:
-
-            cursor.execute(
-                """
-                ALTER TABLE cases
-                ADD COLUMN doctor_notes TEXT DEFAULT ''
-                """
-            )
-
-
-        conn.commit()
+    from database.migrations import run_migrations
+    run_migrations()
 
 
 # Run initialization automatically whenever imported
