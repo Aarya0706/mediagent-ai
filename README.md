@@ -493,8 +493,14 @@ mediagent-ai/
 │   └── pipeline.py
 │
 ├── database/                # Database initialization & schema
+│   ├── connection.py        #   single get_connection() / DB_PATH
+│   ├── schema.py            #   single source of truth for every table
+│   ├── migrations.py        #   idempotent create/backfill, run on every startup
+│   └── db.py                #   manual `python -m database.db` entrypoint
 │
 ├── data/                    # SQLite database
+│
+├── evaluation/               # AI evaluation harnesses (triage + RAG)
 │
 ├── tools/                   # Application modules
 │   ├── auth_tools.py
@@ -512,6 +518,17 @@ mediagent-ai/
 ├── README.md
 └── .env
 ```
+
+Every table (`users`, `cases`, `health_profile`, `lab_reports`, `lab_values`) is
+defined once in `database/schema.py`; `database/migrations.py` creates
+whatever's missing and backfills any column an older database doesn't have
+yet, without touching existing rows. `app.py` (and each `tools/*.py` module
+that touches the DB) calls this on import, so a fresh clone and an
+upgraded-in-place deployment both end up with the same schema. See the
+top-of-file comment in `database/schema.py` for the one deliberate
+limitation this doesn't fix (`patient_name` as the join key rather than a
+real `patient_id` foreign key) and why that's left as documented future
+work rather than a live-data migration bundled in here.
 
 ---
 

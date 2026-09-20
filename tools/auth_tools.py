@@ -1,27 +1,11 @@
-import os
-import sqlite3
 import hashlib
 import secrets
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from database.connection import get_connection, DB_PATH  # noqa: F401 - DB_PATH kept for callers that import it from here
+
 IST = ZoneInfo("Asia/Kolkata")
-
-ROOT = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
-
-DB_PATH = os.path.join(
-    ROOT,
-    "data",
-    "hospital.db"
-)
-
-
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 # ============================================================
@@ -35,38 +19,18 @@ def get_connection():
 # the login just gates st.session_state["auth_user"] for the session's
 # lifetime. Passwords are hashed with PBKDF2-HMAC-SHA256 (stdlib hashlib,
 # no bcrypt dependency needed) with a random per-user salt.
+#
+# The users table itself, and its role/patient_name columns, are now
+# defined once in database/schema.py and created/migrated by
+# database/migrations.py (see ensure_users_table() below) rather than
+# each living here.
 
 def ensure_users_table():
-    with get_connection() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                display_name TEXT,
-                salt TEXT NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(users)")
-        columns = {row["name"] for row in cursor.fetchall()}
-
-        # role distinguishes hospital staff (can look up any patient) from
-        # patient accounts (locked to exactly one patient identity).
-        # patient_name is set once at signup for a patient account and is
-        # the sole source of truth for "which patient's records does this
-        # login see" - it is never taken from a free-text field elsewhere
-        # in the app for a patient-role session.
-        if "role" not in columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'")
-        if "patient_name" not in columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN patient_name TEXT")
-
-        conn.commit()
+    """Kept as a function (rather than inlining the call below) so
+    existing callers/imports of ensure_users_table() elsewhere keep
+    working unchanged."""
+    from database.migrations import run_migrations
+    run_migrations()
 
 
 ensure_users_table()
