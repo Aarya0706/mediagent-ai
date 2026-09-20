@@ -1,15 +1,10 @@
-import requests
 from groq import Groq
 import time
-from langchain_groq import ChatGroq
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema.output_parser import StrOutputParser
 import streamlit as st
 import sqlite3
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from fpdf import FPDF
 from dotenv import load_dotenv
 from textwrap import dedent
 
@@ -319,198 +314,11 @@ if not st.session_state["auth_user"]:
 
 
 # ── PDF helpers ──────────────────────────────────────────────────
-
-def clean_text_for_pdf(text, max_word_len=40):
-    """Strip/replace characters that fpdf's core (Helvetica) font can't render,
-    and break up unbroken long tokens so multi_cell can always wrap them."""
-    if not text:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    replacements = {
-        "\u2018": "'", "\u2019": "'",
-        "\u201c": '"', "\u201d": '"',
-        "\u2013": "-", "\u2014": "-",
-        "\u2026": "...",
-        "\u2022": "- ",
-        "\u2192": " -> ",
-        "\u00a0": " ",
-        "\u00b0": " deg",
-    }
-    for bad, good in replacements.items():
-        text = text.replace(bad, good)
-
-    # Drop any remaining character outside Latin-1 (emojis, other Unicode)
-    text = text.encode("latin-1", "ignore").decode("latin-1")
-
-    # Force-break any "word" longer than max_word_len so it never overflows the page width
-    words = text.split(" ")
-    safe_words = []
-    for w in words:
-        if len(w) > max_word_len:
-            safe_words.append(" ".join(w[i:i + max_word_len] for i in range(0, len(w), max_word_len)))
-        else:
-            safe_words.append(w)
-    return " ".join(safe_words)
-
-
-def generate_pdf_report(
-    patient_name, age, gender, phone, body_part, symptoms_desc,
-    duration, onset_type, severity_slider, conditions_str,
-    severity, department, urgency, result
-):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=8)
-    pdf.add_page()
-
-    # ---------- HEADER ----------
-    pdf.set_fill_color(166, 124, 82)
-    pdf.rect(0, 0, 210, 25, "F")
-
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.set_xy(10, 7)
-    pdf.cell(190, 10, "MediAgent AI - Patient Report")
-
-    pdf.set_text_color(40, 40, 40)
-    pdf.set_y(30)
-
-    # ---------- GENERATED TIME ----------
-    pdf.set_font("Helvetica", "", 10)
-
-    generated_time = clean_text_for_pdf(
-        f"Generated: {now_ist().strftime('%d-%m-%Y %H:%M')} IST"
-    )
-
-    pdf.cell(0, 7, generated_time)
-    pdf.ln(11)
-
-    # ---------- PATIENT DETAILS ----------
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Patient Details")
-    pdf.ln(9)
-
-    pdf.set_font("Helvetica", "", 11)
-
-    patient_text = clean_text_for_pdf(
-        f"Name: {patient_name}\n"
-        f"Age: {age}\n"
-        f"Gender: {gender}\n"
-        f"Phone: {phone}"
-    )
-
-    pdf.multi_cell(0, 7, patient_text)
-    pdf.ln(3)
-
-    # ---------- SYMPTOM INTAKE ----------
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Symptom Intake")
-    pdf.ln(9)
-
-    pdf.set_font("Helvetica", "", 11)
-
-    symptom_text = clean_text_for_pdf(
-        f"Body Area: {body_part}\n"
-        f"Description: {symptoms_desc}\n"
-        f"Duration: {duration}\n"
-        f"Onset: {onset_type}\n"
-        f"Pain Level: {severity_slider}/10\n"
-        f"Known Conditions: {conditions_str}"
-    )
-
-    pdf.multi_cell(0, 7, symptom_text)
-    pdf.ln(3)
-
-    # ---------- TRIAGE RESULT ----------
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Triage Result")
-    pdf.ln(9)
-
-    pdf.set_font("Helvetica", "", 11)
-
-    triage_text = clean_text_for_pdf(
-        f"Severity: {severity}\n"
-        f"Department: {department}\n"
-        f"Urgency: {urgency}/10"
-    )
-
-    pdf.multi_cell(0, 7, triage_text)
-    pdf.ln(3)
-
-    # ---------- AI ASSESSMENT ----------
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "AI Assessment")
-    pdf.ln(9)
-
-    pdf.set_font("Helvetica", "", 11)
-
-    summary = clean_text_for_pdf(
-        result.get("summary", "No assessment available.")
-    )
-
-    pdf.multi_cell(0, 7, summary)
-    pdf.ln(3)
-
-    # ---------- RECOMMENDED ACTIONS ----------
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Recommended Actions")
-    pdf.ln(9)
-
-    pdf.set_font("Helvetica", "", 11)
-
-    actions = result.get("actions", [])
-
-    if actions:
-        for i, action in enumerate(actions, 1):
-            action_text = clean_text_for_pdf(f"{i}. {action}")
-            pdf.multi_cell(0, 7, action_text)
-            pdf.ln(1)
-    else:
-        pdf.multi_cell(0, 7, "No recommended actions available.")
-
-    # ---------- EMERGENCY WARNING ----------
-    warning = result.get("warning")
-
-    if (
-        warning
-        and str(warning).strip()
-        and str(warning).strip().upper() != "NONE"
-    ):
-        pdf.ln(4)
-
-        pdf.set_fill_color(231, 76, 60)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Helvetica", "B", 11)
-
-        warning_text = clean_text_for_pdf(
-            f"EMERGENCY WARNING: {str(warning).strip()}"
-        )
-
-        pdf.multi_cell(
-            0,
-            8,
-            warning_text,
-            fill=True
-        )
-
-        pdf.set_text_color(40, 40, 40)
-    # ---------- FOOTER ----------
-    pdf.ln(3)
-
-    pdf.set_font("Helvetica", "I", 9)
-
-    disclaimer = clean_text_for_pdf(
-        "Disclaimer: MediAgent AI provides preliminary AI-assisted triage "
-        "information and does not replace professional medical diagnosis "
-        "or treatment."
-    )
-
-    pdf.multi_cell(0, 6, disclaimer)
-
-    # fpdf2 2.x returns bytearray from output()
-    pdf_data = pdf.output()
-
-    return bytes(pdf_data)
+#
+# Extracted to services/report_service.py - kept as local names here
+# (mechanical, no behavior change) so every existing call site below
+# keeps working unchanged.
+from services.report_service import generate_pdf_report  # noqa: E402
 
 
 # ============================================================
@@ -523,35 +331,10 @@ def generate_pdf_report(
 # an operational snapshot (today's hospital state); a patient lands on
 # a summary of their own records. The tabs below are unchanged and still
 # work exactly as before for anyone who wants to navigate directly.
-
-def render_landing_stat_cards(items):
-    """Render a row of small bordered stat cards (icon, label, value, accent
-    color) instead of bare st.metric() calls. st.metric() on its own has no
-    background or grouping, so a row of them reads as loose numbers floating
-    on the page; wrapping each one in a white card with a colored top border
-    ties them together as a single glanceable panel."""
-    # IMPORTANT: this HTML must stay on one line with no leading whitespace.
-    # st.markdown runs its content through a Markdown parser before handing
-    # raw-HTML blocks through - a 4+ space indent or a blank line inside the
-    # string gets read as a Markdown "indented code block", which is exactly
-    # what happened before: only the first <div> rendered as HTML, and
-    # everything after the first blank line printed out as literal text.
-    card_template = (
-        '<div style="background:#FFFFFF;border-radius:14px;padding:14px 16px;'
-        'border-top:4px solid {color};box-shadow:0 3px 10px rgba(0,0,0,.07);'
-        'flex:1 1 150px;min-width:150px;">'
-        '<div style="font-size:12px;font-weight:700;color:#7F8C8D;letter-spacing:.3px;">{icon} {label}</div>'
-        '<div style="margin-top:6px;font-size:21px;font-weight:800;color:#2C3E50;">{value}</div>'
-        '</div>'
-    )
-    cards_html = "".join(
-        card_template.format(color=color, icon=icon, label=label.upper(), value=value)
-        for icon, label, value, color in items
-    )
-    st.markdown(
-        f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 16px 0;">{cards_html}</div>',
-        unsafe_allow_html=True,
-    )
+#
+# render_landing_stat_cards itself now lives in ui/components.py (a
+# reusable rendering helper, not landing-screen-specific logic).
+from ui.components import render_landing_stat_cards  # noqa: E402
 
 
 _landing_role = st.session_state.get("auth_role")
@@ -1824,891 +1607,697 @@ with tab3:
             st.error(f"Could not load hospital analytics: {e}")
      
 
-    # ───────────────────────────────────────────────────────────────
-    # TAB 4 - DOCTOR PORTAL
-    # ───────────────────────────────────────────────────────────────
-    with tab4:
-        if st.session_state.get("auth_role") == "patient":
-            st.warning("This view is for hospital staff only. Patients don't have a doctor work queue.")
+# ───────────────────────────────────────────────────────────────
+# TAB 4 - DOCTOR PORTAL
+# ───────────────────────────────────────────────────────────────
+with tab4:
+    if st.session_state.get("auth_role") == "patient":
+        st.warning("This view is for hospital staff only. Patients don't have a doctor work queue.")
+    else:
+
+        st.header("👨‍⚕️ Doctor Portal")
+        st.caption(
+            "Live clinical work queue prioritized by severity and urgency."
+        )
+
+        # ---------------------------------------------------------
+        # AGENT OBSERVABILITY
+        # ---------------------------------------------------------
+        # Shown before the case queue (and before the st.stop() below
+        # for an empty queue) so it's visible even on a fresh
+        # install with zero cases yet. See agents/observability.py -
+        # this reads call metadata only, never symptom/patient text.
+        with st.expander("🔎 Agent Observability (last 24h)", expanded=False):
+            try:
+                from agents.observability import get_observability_stats
+                obs_stats = get_observability_stats(hours=24)
+
+                if obs_stats["total_agent_calls"] == 0:
+                    st.caption("No agent runs recorded in this window yet.")
+                else:
+                    oc1, oc2, oc3, oc4 = st.columns(4)
+                    oc1.metric("Triage runs", obs_stats["total_runs"])
+                    oc2.metric("Agent calls", obs_stats["total_agent_calls"])
+                    oc3.metric(
+                        "Success rate",
+                        f"{obs_stats['success_rate_pct']}%"
+                        if obs_stats["success_rate_pct"] is not None
+                        else "—",
+                    )
+                    oc4.metric(
+                        "Avg latency",
+                        f"{obs_stats['avg_latency_ms']:.0f} ms"
+                        if obs_stats["avg_latency_ms"] is not None
+                        else "—",
+                    )
+
+                    if obs_stats["by_agent"]:
+                        st.caption("By agent")
+                        st.dataframe(
+                            pd.DataFrame(obs_stats["by_agent"]),
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                    if obs_stats["recent_failures"]:
+                        st.caption("Recent failures")
+                        st.dataframe(
+                            pd.DataFrame(obs_stats["recent_failures"]),
+                            width="stretch",
+                            hide_index=True,
+                        )
+            except Exception as _obs_err:
+                st.caption(f"Observability data unavailable: {_obs_err}")
+
+        # ---------------------------------------------------------
+        # LOAD CASES
+        # ---------------------------------------------------------
+
+        with sqlite3.connect(DB_PATH) as conn:
+            doctor_df = pd.read_sql_query(
+                """
+                SELECT *
+                FROM cases
+                ORDER BY
+                    CASE
+                        WHEN severity='Critical' THEN 1
+                        WHEN severity='Moderate' THEN 2
+                        ELSE 3
+                    END,
+                    created_at ASC
+                """,
+                conn,
+            )
+
+        if doctor_df.empty:
+            st.info("No patient cases available.")
+            st.stop()
+
+        # ---------------------------------------------------------
+        # DASHBOARD SUMMARY
+        # ---------------------------------------------------------
+
+        total_cases = len(doctor_df)
+
+        active_df = doctor_df[
+            doctor_df["status"] != "Resolved"
+        ]
+
+        active_cases = len(active_df)
+
+        critical_cases = len(
+            active_df[
+                active_df["severity"] == "Critical"
+            ]
+        )
+
+        pending_cases = len(
+            active_df[
+                active_df["status"] == "Pending"
+            ]
+        )
+
+        treating_cases = len(
+            active_df[
+                active_df["status"] == "In Progress"
+            ]
+        )
+
+        resolved_cases = len(
+            doctor_df[
+                doctor_df["status"] == "Resolved"
+            ]
+        )
+
+        st.subheader("📊 Dashboard Overview")
+
+        cards = [
+            ("📋", "Active", active_cases, "#3B82F6"),
+            ("🔴", "Critical", critical_cases, "#EF4444"),
+            ("⏳", "Pending", pending_cases, "#F59E0B"),
+            ("🩺", "Treating", treating_cases, "#8B5CF6"),
+            ("✅", "Resolved", resolved_cases, "#22C55E"),
+        ]
+
+        cols = st.columns(5)
+
+        for col, (icon, title, value, color) in zip(cols, cards):
+            with col:
+                st.html(f"""
+        <div style="
+        background:white;
+        border-radius:16px;
+        padding:18px;
+        border-top:5px solid {color};
+        box-shadow:0 4px 10px rgba(0,0,0,.08);
+        text-align:center;
+        min-height:120px;
+        display:flex;
+        flex-direction:column;
+        justify-content:center;
+        ">
+
+        <div style="
+        font-size:15px;
+        font-weight:600;
+        color:#64748B;
+        ">
+        {icon} {title}
+        </div>
+
+        <div style="
+        margin-top:12px;
+        font-size:28px;
+        font-weight:800;
+        color:{color};
+        ">
+        {value}
+        </div>
+
+        </div>
+        """)
+
+        if critical_cases:
+
+            st.error(
+                f"🚨 {critical_cases} critical patient(s) require immediate attention."
+            )
+
         else:
 
-            st.header("👨‍⚕️ Doctor Portal")
-            st.caption(
-                "Live clinical work queue prioritized by severity and urgency."
+            st.success(
+                "✅ No critical patients waiting."
             )
 
-            # ---------------------------------------------------------
-            # AGENT OBSERVABILITY
-            # ---------------------------------------------------------
-            # Shown before the case queue (and before the st.stop() below
-            # for an empty queue) so it's visible even on a fresh
-            # install with zero cases yet. See agents/observability.py -
-            # this reads call metadata only, never symptom/patient text.
-            with st.expander("🔎 Agent Observability (last 24h)", expanded=False):
-                try:
-                    from agents.observability import get_observability_stats
-                    obs_stats = get_observability_stats(hours=24)
+        # ---------------------------------------------------------
+        # SEARCH + FILTERS
+        # ---------------------------------------------------------
 
-                    if obs_stats["total_agent_calls"] == 0:
-                        st.caption("No agent runs recorded in this window yet.")
-                    else:
-                        oc1, oc2, oc3, oc4 = st.columns(4)
-                        oc1.metric("Triage runs", obs_stats["total_runs"])
-                        oc2.metric("Agent calls", obs_stats["total_agent_calls"])
-                        oc3.metric(
-                            "Success rate",
-                            f"{obs_stats['success_rate_pct']}%"
-                            if obs_stats["success_rate_pct"] is not None
-                            else "—",
-                        )
-                        oc4.metric(
-                            "Avg latency",
-                            f"{obs_stats['avg_latency_ms']:.0f} ms"
-                            if obs_stats["avg_latency_ms"] is not None
-                            else "—",
-                        )
+        left, right = st.columns([5,1])
 
-                        if obs_stats["by_agent"]:
-                            st.caption("By agent")
-                            st.dataframe(
-                                pd.DataFrame(obs_stats["by_agent"]),
-                                width="stretch",
-                                hide_index=True,
-                            )
+        with left:
 
-                        if obs_stats["recent_failures"]:
-                            st.caption("Recent failures")
-                            st.dataframe(
-                                pd.DataFrame(obs_stats["recent_failures"]),
-                                width="stretch",
-                                hide_index=True,
-                            )
-                except Exception as _obs_err:
-                    st.caption(f"Observability data unavailable: {_obs_err}")
+            search = st.text_input(
+                "🔍 Search Patient",
+                placeholder="Patient name or Case ID..."
+            )
 
-            # ---------------------------------------------------------
-            # LOAD CASES
-            # ---------------------------------------------------------
+        with right:
 
-            with sqlite3.connect(DB_PATH) as conn:
-                doctor_df = pd.read_sql_query(
-                    """
-                    SELECT *
-                    FROM cases
-                    ORDER BY
-                        CASE
-                            WHEN severity='Critical' THEN 1
-                            WHEN severity='Moderate' THEN 2
-                            ELSE 3
-                        END,
-                        created_at ASC
+            show_resolved = st.toggle(
+                "Show Resolved",
+                value=False
+            )
+
+        departments = sorted(
+            doctor_df["department"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        selected_department = st.selectbox(
+            "🏥 Department",
+            ["All Departments"] + departments
+        )
+
+        # ---------------------------------------------------------
+        # FILTER DATA
+        # ---------------------------------------------------------
+
+        filtered_df = doctor_df.copy()
+
+        if not show_resolved:
+
+            filtered_df = filtered_df[
+                filtered_df["status"] != "Resolved"
+            ]
+
+        if selected_department != "All Departments":
+
+            filtered_df = filtered_df[
+                filtered_df["department"]
+                ==
+                selected_department
+            ]
+
+        if search:
+
+            s = search.lower()
+
+            filtered_df = filtered_df[
+                filtered_df["patient_name"]
+                    .astype(str)
+                    .str.lower()
+                    .str.contains(s)
+
+                |
+
+                filtered_df["id"]
+                    .astype(str)
+                    .str.contains(s)
+            ]
+
+        # ---------------------------------------------------------
+        # ACTIVE QUEUE INFO
+        # ---------------------------------------------------------
+
+        workload = (
+            filtered_df[filtered_df["status"] != "Resolved"]
+            .groupby("department")
+            .size()
+            .sort_values(ascending=False)
+        )
+
+        if not workload.empty:
+            chips = "".join(
+                f'<span style="background:#EEF2FF; color:#3B4C8C; font-size:12px; '
+                f'font-weight:600; padding:4px 12px; border-radius:12px; margin-right:6px; '
+                f'display:inline-block;">🏥 {dept}: {count}</span>'
+                for dept, count in workload.items()
+            )
+            st.markdown(
+                f'<div style="margin:10px 0 4px 0;">{chips}</div>',
+                unsafe_allow_html=True,
+            )
+
+        st.divider()
+
+        # ======================================================
+        # TIME AGO + OVERDUE HELPERS
+        # ======================================================
+
+        # ======================================================
+        # PATIENT AVATAR COLOR - deterministic per name (not per
+        # severity, which is already used elsewhere on the card), so
+        # scanning a queue with several "Moderate" cases in a row still
+        # gives an immediate visual anchor for WHO each card belongs to,
+        # and the same patient keeps the same color across every card.
+        # ======================================================
+
+        AVATAR_PALETTE = [
+            "#4C6EF5", "#F76707", "#12B886", "#E64980",
+            "#7048E8", "#1098AD", "#F59F00", "#37B24D",
+        ]
+
+        def patient_avatar(name):
+            name = str(name or "?").strip()
+            initial = name[0].upper() if name else "?"
+            color = AVATAR_PALETTE[sum(ord(c) for c in name.lower()) % len(AVATAR_PALETTE)]
+            return initial, color
+
+        def time_ago(timestamp):
+            try:
+                created = pd.to_datetime(timestamp)
+                now = pd.Timestamp.now()
+                seconds = int((now - created).total_seconds())
+                if seconds < 0:
+                    seconds = 0
+                if seconds < 60:
+                    return "Just now", seconds
+                minutes = seconds // 60
+                if minutes < 60:
+                    return f"{minutes} min ago", seconds
+                hours = minutes // 60
+                if hours < 24:
+                    return f"{hours} hr ago", seconds
+                days = hours // 24
+                if days < 30:
+                    return f"{days} day{'s' if days != 1 else ''} ago", seconds
+                return created.strftime("%d-%m-%Y"), seconds
+            except Exception:
+                return str(timestamp), 0
+
+        # Rough SLA thresholds by severity - a case sitting untouched past
+        # this gets flagged, so nothing critical silently ages in the queue.
+        OVERDUE_THRESHOLD_SECONDS = {
+            "critical": 30 * 60,       # 30 min
+            "moderate": 3 * 60 * 60,   # 3 hr
+            "mild": 24 * 60 * 60,      # 24 hr
+        }
+
+        # ======================================================
+        # CASE QUEUE
+        # ======================================================
+        st.divider()
+
+        st.markdown("## 🗂 Patient Queue")
+
+        if filtered_df.empty:
+            st.info("No active cases" + ("" if show_resolved else " (resolved cases are hidden - toggle above to include them)") + ".")
+
+        else:
+            for _, case in filtered_df.iterrows():
+
+                case_id = int(case["id"])
+
+                status = case.get("status", "Pending")
+                if pd.isna(status) or not status:
+                    status = "Pending"
+
+                time_text, elapsed_seconds = time_ago(case["created_at"])
+
+                severity_key = str(case["severity"]).strip().lower()
+                is_overdue = (
+                    status != "Resolved"
+                    and elapsed_seconds > OVERDUE_THRESHOLD_SECONDS.get(severity_key, 24 * 60 * 60)
+                )
+
+                severity_icon = {
+                    "Critical": "🔴",
+                    "Moderate": "🟡",
+                    "Mild": "🟢",
+                }.get(case["severity"], "⚪")
+
+                status_icon = {
+                    "Pending": "⏳",
+                    "In Progress": "🩺",
+                    "Resolved": "✅",
+                }.get(status, "⏳")
+
+                severity_colors = {
+                    "critical": {"bg": "#FDEDEC", "border": "#E74C3C", "text": "#C0392B"},
+                    "moderate": {"bg": "#FBF2E3", "border": "#A67C52", "text": "#8B6A45"},
+                    "mild":     {"bg": "#EAF6EE", "border": "#4C9A6A", "text": "#2F7A4D"},
+                }
+                colors = severity_colors.get(
+                    severity_key,
+                    {"bg": "#F1EEE8", "border": "#A6A6A6", "text": "#5C5C5C"},
+                )
+
+                overdue_badge = (
+                    '<span style="background:#C0392B; color:white; font-size:11px; '
+                    'font-weight:700; padding:2px 8px; border-radius:8px; margin-left:8px;">'
+                    '⏱ OVERDUE</span>'
+                ) if is_overdue else ""
+
+                avatar_initial, avatar_color = patient_avatar(case["patient_name"])
+
+                with st.container(border=True):
+                
+                 
+
+                    card_html = dedent(f"""
+                    <div style="
+                    background:#FFFFFF;
+                    border-left:8px solid {colors['border']};
+                    border-radius:16px;
+                    padding:12px;
+                    margin-bottom:6px;
+                    box-shadow:0 4px 12px rgba(0,0,0,.08);
+                    ">
+
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+
+                    <div style="display:flex;align-items:center;gap:12px;">
+
+                    <div style="
+                    width:44px;height:44px;min-width:44px;border-radius:50%;
+                    background:{avatar_color};color:white;font-size:18px;font-weight:800;
+                    display:flex;align-items:center;justify-content:center;
+                    box-shadow:0 2px 6px rgba(0,0,0,.15);
+                    ">
+                    {avatar_initial}
+                    </div>
+
+                    <div>
+
+                    <div style="
+                    font-size:22px;
+                    font-weight:800;
+                    color:#2C3E50;
+                    ">
+                    {severity_icon} {case["patient_name"]}
+                    </div>
+
+                    <div style="
+                    margin-top:5px;
+                    font-size:13px;
+                    color:#7F8C8D;
+                    ">
+
+                    📄 Case #{case_id}
+                    &nbsp;&nbsp;•&nbsp;&nbsp;
+                    🕒 {time_text}
+
+                    </div>
+
+                    </div>
+
+                    </div>
+
+                    <div>
+
+                    {overdue_badge}
+
+                    </div>
+
+                    </div>
+
+                    <hr style="margin:15px 0;">
+
+                    <div style="
+                    display:grid;
+                    grid-template-columns:repeat(3,1fr);
+                    gap:15px;
+                    ">
+
+                    <div>
+
+                    <div style="
+                    font-size:12px;
+                    color:#7F8C8D;
+                    ">
+                    SEVERITY
+                    </div>
+
+                    <div style="
+                    font-size:16px;
+                    font-weight:700;
+                    color:{colors["text"]};
+                    ">
+                    {severity_icon} {case["severity"]}
+                    </div>
+
+                    </div>
+
+                    <div>
+
+                    <div style="
+                    font-size:12px;
+                    color:#7F8C8D;
+                    ">
+                    DEPARTMENT
+                    </div>
+
+                    <div style="
+                    font-size:16px;
+                    font-weight:600;
+                    ">
+                    🏥 {case["department"]}
+                    </div>
+
+                    </div>
+
+                    <div>
+
+                    <div style="
+                    font-size:12px;
+                    color:#7F8C8D;
+                    ">
+                    STATUS
+                    </div>
+
+                    <div style="
+                    font-size:16px;
+                    font-weight:600;
+                    ">
+                    {status_icon} {status}
+                    </div>
+
+                    </div>
+
+                    </div>
+
+                    </div>
+                    """)
+
+                    st.html(card_html)
+
+                    st.markdown(
+                        f"""
+                    <div style="
+                    background:#F8FAFC;
+                    padding:10px 14px;
+                    border-radius:10px;
+                    margin:6px 0;
+                    font-size:15px;
+                    ">
+                    🩺 <b>Symptoms:</b> {case["symptoms"]}
+                    </div>
                     """,
-                    conn,
-                )
-
-            if doctor_df.empty:
-                st.info("No patient cases available.")
-                st.stop()
-
-            # ---------------------------------------------------------
-            # DASHBOARD SUMMARY
-            # ---------------------------------------------------------
-
-            total_cases = len(doctor_df)
-
-            active_df = doctor_df[
-                doctor_df["status"] != "Resolved"
-            ]
-
-            active_cases = len(active_df)
-
-            critical_cases = len(
-                active_df[
-                    active_df["severity"] == "Critical"
-                ]
-            )
-
-            pending_cases = len(
-                active_df[
-                    active_df["status"] == "Pending"
-                ]
-            )
-
-            treating_cases = len(
-                active_df[
-                    active_df["status"] == "In Progress"
-                ]
-            )
-
-            resolved_cases = len(
-                doctor_df[
-                    doctor_df["status"] == "Resolved"
-                ]
-            )
-
-            st.subheader("📊 Dashboard Overview")
-
-            cards = [
-                ("📋", "Active", active_cases, "#3B82F6"),
-                ("🔴", "Critical", critical_cases, "#EF4444"),
-                ("⏳", "Pending", pending_cases, "#F59E0B"),
-                ("🩺", "Treating", treating_cases, "#8B5CF6"),
-                ("✅", "Resolved", resolved_cases, "#22C55E"),
-            ]
-
-            cols = st.columns(5)
-
-            for col, (icon, title, value, color) in zip(cols, cards):
-                with col:
-                    st.html(f"""
-            <div style="
-            background:white;
-            border-radius:16px;
-            padding:18px;
-            border-top:5px solid {color};
-            box-shadow:0 4px 10px rgba(0,0,0,.08);
-            text-align:center;
-            min-height:120px;
-            display:flex;
-            flex-direction:column;
-            justify-content:center;
-            ">
-
-            <div style="
-            font-size:15px;
-            font-weight:600;
-            color:#64748B;
-            ">
-            {icon} {title}
-            </div>
-
-            <div style="
-            margin-top:12px;
-            font-size:28px;
-            font-weight:800;
-            color:{color};
-            ">
-            {value}
-            </div>
-
-            </div>
-            """)
-
-            if critical_cases:
-
-                st.error(
-                    f"🚨 {critical_cases} critical patient(s) require immediate attention."
-                )
-
-            else:
-
-                st.success(
-                    "✅ No critical patients waiting."
-                )
-
-            # ---------------------------------------------------------
-            # SEARCH + FILTERS
-            # ---------------------------------------------------------
-
-            left, right = st.columns([5,1])
-
-            with left:
-
-                search = st.text_input(
-                    "🔍 Search Patient",
-                    placeholder="Patient name or Case ID..."
-                )
-
-            with right:
-
-                show_resolved = st.toggle(
-                    "Show Resolved",
-                    value=False
-                )
-
-            departments = sorted(
-                doctor_df["department"]
-                .dropna()
-                .unique()
-                .tolist()
-            )
-
-            selected_department = st.selectbox(
-                "🏥 Department",
-                ["All Departments"] + departments
-            )
-
-            # ---------------------------------------------------------
-            # FILTER DATA
-            # ---------------------------------------------------------
-
-            filtered_df = doctor_df.copy()
-
-            if not show_resolved:
-
-                filtered_df = filtered_df[
-                    filtered_df["status"] != "Resolved"
-                ]
-
-            if selected_department != "All Departments":
-
-                filtered_df = filtered_df[
-                    filtered_df["department"]
-                    ==
-                    selected_department
-                ]
-
-            if search:
-
-                s = search.lower()
-
-                filtered_df = filtered_df[
-                    filtered_df["patient_name"]
-                        .astype(str)
-                        .str.lower()
-                        .str.contains(s)
-
-                    |
-
-                    filtered_df["id"]
-                        .astype(str)
-                        .str.contains(s)
-                ]
-
-            # ---------------------------------------------------------
-            # ACTIVE QUEUE INFO
-            # ---------------------------------------------------------
-
-            workload = (
-                filtered_df[filtered_df["status"] != "Resolved"]
-                .groupby("department")
-                .size()
-                .sort_values(ascending=False)
-            )
-
-            if not workload.empty:
-                chips = "".join(
-                    f'<span style="background:#EEF2FF; color:#3B4C8C; font-size:12px; '
-                    f'font-weight:600; padding:4px 12px; border-radius:12px; margin-right:6px; '
-                    f'display:inline-block;">🏥 {dept}: {count}</span>'
-                    for dept, count in workload.items()
-                )
-                st.markdown(
-                    f'<div style="margin:10px 0 4px 0;">{chips}</div>',
                     unsafe_allow_html=True,
-                )
-
-            st.divider()
-
-            # ======================================================
-            # TIME AGO + OVERDUE HELPERS
-            # ======================================================
-
-            # ======================================================
-            # PATIENT AVATAR COLOR - deterministic per name (not per
-            # severity, which is already used elsewhere on the card), so
-            # scanning a queue with several "Moderate" cases in a row still
-            # gives an immediate visual anchor for WHO each card belongs to,
-            # and the same patient keeps the same color across every card.
-            # ======================================================
-
-            AVATAR_PALETTE = [
-                "#4C6EF5", "#F76707", "#12B886", "#E64980",
-                "#7048E8", "#1098AD", "#F59F00", "#37B24D",
-            ]
-
-            def patient_avatar(name):
-                name = str(name or "?").strip()
-                initial = name[0].upper() if name else "?"
-                color = AVATAR_PALETTE[sum(ord(c) for c in name.lower()) % len(AVATAR_PALETTE)]
-                return initial, color
-
-            def time_ago(timestamp):
-                try:
-                    created = pd.to_datetime(timestamp)
-                    now = pd.Timestamp.now()
-                    seconds = int((now - created).total_seconds())
-                    if seconds < 0:
-                        seconds = 0
-                    if seconds < 60:
-                        return "Just now", seconds
-                    minutes = seconds // 60
-                    if minutes < 60:
-                        return f"{minutes} min ago", seconds
-                    hours = minutes // 60
-                    if hours < 24:
-                        return f"{hours} hr ago", seconds
-                    days = hours // 24
-                    if days < 30:
-                        return f"{days} day{'s' if days != 1 else ''} ago", seconds
-                    return created.strftime("%d-%m-%Y"), seconds
-                except Exception:
-                    return str(timestamp), 0
-
-            # Rough SLA thresholds by severity - a case sitting untouched past
-            # this gets flagged, so nothing critical silently ages in the queue.
-            OVERDUE_THRESHOLD_SECONDS = {
-                "critical": 30 * 60,       # 30 min
-                "moderate": 3 * 60 * 60,   # 3 hr
-                "mild": 24 * 60 * 60,      # 24 hr
-            }
-
-            # ======================================================
-            # CASE QUEUE
-            # ======================================================
-            st.divider()
-
-            st.markdown("## 🗂 Patient Queue")
-
-            if filtered_df.empty:
-                st.info("No active cases" + ("" if show_resolved else " (resolved cases are hidden - toggle above to include them)") + ".")
-
-            else:
-                for _, case in filtered_df.iterrows():
-
-                    case_id = int(case["id"])
-
-                    status = case.get("status", "Pending")
-                    if pd.isna(status) or not status:
-                        status = "Pending"
-
-                    time_text, elapsed_seconds = time_ago(case["created_at"])
-
-                    severity_key = str(case["severity"]).strip().lower()
-                    is_overdue = (
-                        status != "Resolved"
-                        and elapsed_seconds > OVERDUE_THRESHOLD_SECONDS.get(severity_key, 24 * 60 * 60)
                     )
 
-                    severity_icon = {
-                        "Critical": "🔴",
-                        "Moderate": "🟡",
-                        "Mild": "🟢",
-                    }.get(case["severity"], "⚪")
+                    # ------------------------------------------
+                    # CLINICAL CONTEXT - pulled from the patient's saved
+                    # Health Profile, not from this case row. This is the
+                    # thing a doctor actually needs before walking in that
+                    # Case History has no reason to show: what this
+                    # specific patient is allergic to and already on.
+                    # Rendered as one consistent card grid (matching the
+                    # main patient card's styling) instead of stacked
+                    # st.success/error/warning/info banners, which read as
+                    # four different UI components rather than one panel.
+                    # ------------------------------------------
 
-                    status_icon = {
-                        "Pending": "⏳",
-                        "In Progress": "🩺",
-                        "Resolved": "✅",
-                    }.get(status, "⏳")
+                    _profile = get_profile(str(case["patient_name"]))
 
-                    severity_colors = {
-                        "critical": {"bg": "#FDEDEC", "border": "#E74C3C", "text": "#C0392B"},
-                        "moderate": {"bg": "#FBF2E3", "border": "#A67C52", "text": "#8B6A45"},
-                        "mild":     {"bg": "#EAF6EE", "border": "#4C9A6A", "text": "#2F7A4D"},
-                    }
-                    colors = severity_colors.get(
-                        severity_key,
-                        {"bg": "#F1EEE8", "border": "#A6A6A6", "text": "#5C5C5C"},
-                    )
+                    if _profile:
+                        profile_fields = []
+                        if _profile.get("blood_group") and _profile["blood_group"] != "Unknown":
+                            profile_fields.append(("🩸", "Blood Group", _profile["blood_group"], "#2F7A4D", "#EAF6EE"))
+                        if _profile.get("allergies"):
+                            profile_fields.append(("⚠️", "Allergies", _profile["allergies"], "#C0392B", "#FDEDEC"))
+                        if _profile.get("chronic_conditions") and _profile["chronic_conditions"].lower() != "none":
+                            profile_fields.append(("🩺", "Chronic Conditions", _profile["chronic_conditions"], "#8B6A45", "#FBF2E3"))
+                        if _profile.get("current_medications"):
+                            profile_fields.append(("💊", "Medications", _profile["current_medications"], "#34495E", "#EEF2F7"))
 
-                    overdue_badge = (
-                        '<span style="background:#C0392B; color:white; font-size:11px; '
-                        'font-weight:700; padding:2px 8px; border-radius:8px; margin-left:8px;">'
-                        '⏱ OVERDUE</span>'
-                    ) if is_overdue else ""
-
-                    avatar_initial, avatar_color = patient_avatar(case["patient_name"])
-
-                    with st.container(border=True):
-                    
-                     
-
-                        card_html = dedent(f"""
-                        <div style="
-                        background:#FFFFFF;
-                        border-left:8px solid {colors['border']};
-                        border-radius:16px;
-                        padding:12px;
-                        margin-bottom:6px;
-                        box-shadow:0 4px 12px rgba(0,0,0,.08);
-                        ">
-
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-
-                        <div style="display:flex;align-items:center;gap:12px;">
-
-                        <div style="
-                        width:44px;height:44px;min-width:44px;border-radius:50%;
-                        background:{avatar_color};color:white;font-size:18px;font-weight:800;
-                        display:flex;align-items:center;justify-content:center;
-                        box-shadow:0 2px 6px rgba(0,0,0,.15);
-                        ">
-                        {avatar_initial}
-                        </div>
-
-                        <div>
-
-                        <div style="
-                        font-size:22px;
-                        font-weight:800;
-                        color:#2C3E50;
-                        ">
-                        {severity_icon} {case["patient_name"]}
-                        </div>
-
-                        <div style="
-                        margin-top:5px;
-                        font-size:13px;
-                        color:#7F8C8D;
-                        ">
-
-                        📄 Case #{case_id}
-                        &nbsp;&nbsp;•&nbsp;&nbsp;
-                        🕒 {time_text}
-
-                        </div>
-
-                        </div>
-
-                        </div>
-
-                        <div>
-
-                        {overdue_badge}
-
-                        </div>
-
-                        </div>
-
-                        <hr style="margin:15px 0;">
-
-                        <div style="
-                        display:grid;
-                        grid-template-columns:repeat(3,1fr);
-                        gap:15px;
-                        ">
-
-                        <div>
-
-                        <div style="
-                        font-size:12px;
-                        color:#7F8C8D;
-                        ">
-                        SEVERITY
-                        </div>
-
-                        <div style="
-                        font-size:16px;
-                        font-weight:700;
-                        color:{colors["text"]};
-                        ">
-                        {severity_icon} {case["severity"]}
-                        </div>
-
-                        </div>
-
-                        <div>
-
-                        <div style="
-                        font-size:12px;
-                        color:#7F8C8D;
-                        ">
-                        DEPARTMENT
-                        </div>
-
-                        <div style="
-                        font-size:16px;
-                        font-weight:600;
-                        ">
-                        🏥 {case["department"]}
-                        </div>
-
-                        </div>
-
-                        <div>
-
-                        <div style="
-                        font-size:12px;
-                        color:#7F8C8D;
-                        ">
-                        STATUS
-                        </div>
-
-                        <div style="
-                        font-size:16px;
-                        font-weight:600;
-                        ">
-                        {status_icon} {status}
-                        </div>
-
-                        </div>
-
-                        </div>
-
-                        </div>
-                        """)
-
-                        st.html(card_html)
-
-                        st.markdown(
-                            f"""
-                        <div style="
-                        background:#F8FAFC;
-                        padding:10px 14px;
-                        border-radius:10px;
-                        margin:6px 0;
-                        font-size:15px;
-                        ">
-                        🩺 <b>Symptoms:</b> {case["symptoms"]}
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
+                        if profile_fields:
+                            st.markdown("##### 📋 Patient Health Profile")
+                            card_pieces = []
+                            for icon, label, value, txt, bg in profile_fields:
+                                card_pieces.append(
+                                    "<div style=\"background:" + bg + "; border-radius:10px; padding:10px 14px; "
+                                    "margin-bottom:8px;\">"
+                                    "<div style=\"font-size:11px; font-weight:700; color:" + txt + "; letter-spacing:0.4px;\">"
+                                    + icon + " " + label.upper() + "</div>"
+                                    "<div style=\"font-size:14px; color:#2C3E50; margin-top:2px;\">"
+                                    + str(value) + "</div>"
+                                    "</div>"
+                                )
+                            profile_cards_html = "".join(card_pieces)
+                            st.markdown(
+                                "<div style=\"display:grid; grid-template-columns:repeat(2,1fr); gap:10px;\">"
+                                + profile_cards_html + "</div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.caption("📋 No health profile details saved for this patient yet.")
+                    else:
+                        st.caption(
+                            "📋 No saved Health Profile for this patient - allergies and "
+                            "medications won't show here until one is added on the Health Profile tab."
                         )
 
-                        # ------------------------------------------
-                        # CLINICAL CONTEXT - pulled from the patient's saved
-                        # Health Profile, not from this case row. This is the
-                        # thing a doctor actually needs before walking in that
-                        # Case History has no reason to show: what this
-                        # specific patient is allergic to and already on.
-                        # Rendered as one consistent card grid (matching the
-                        # main patient card's styling) instead of stacked
-                        # st.success/error/warning/info banners, which read as
-                        # four different UI components rather than one panel.
-                        # ------------------------------------------
+                    if case.get("summary") or case.get("recommendation"):
+                        with st.expander("🧠 AI Assessment", expanded=False):
+                            if case.get("summary"):
+                                st.markdown("**Clinical Summary**")
+                                st.write(case["summary"])
+                            if case.get("recommendation"):
+                                st.markdown("**Recommended Action**")
+                                st.write(case["recommendation"])
 
-                        _profile = get_profile(str(case["patient_name"]))
+                    # ------------------------------------------
+                    # DOCTOR CONSULTATION NOTES - genuinely doctor-only
+                    # data that Case History has no equivalent for: a
+                    # persisted free-text note the doctor writes during
+                    # or after seeing the patient, saved back to this case.
+                    # ------------------------------------------
 
-                        if _profile:
-                            profile_fields = []
-                            if _profile.get("blood_group") and _profile["blood_group"] != "Unknown":
-                                profile_fields.append(("🩸", "Blood Group", _profile["blood_group"], "#2F7A4D", "#EAF6EE"))
-                            if _profile.get("allergies"):
-                                profile_fields.append(("⚠️", "Allergies", _profile["allergies"], "#C0392B", "#FDEDEC"))
-                            if _profile.get("chronic_conditions") and _profile["chronic_conditions"].lower() != "none":
-                                profile_fields.append(("🩺", "Chronic Conditions", _profile["chronic_conditions"], "#8B6A45", "#FBF2E3"))
-                            if _profile.get("current_medications"):
-                                profile_fields.append(("💊", "Medications", _profile["current_medications"], "#34495E", "#EEF2F7"))
+                    with st.expander(
+                        "📝 Consultation Notes" + (" (saved)" if case.get("doctor_notes") else ""),
+                        expanded=False,
+                    ):
+                        notes_value = st.text_area(
+                            "Notes",
+                            value=case.get("doctor_notes") or "",
+                            key=f"notes_{case_id}",
+                            label_visibility="collapsed",
+                            placeholder="e.g. Discussed symptoms, ordered CBC, follow up in 1 week...",
+                            height=100,
+                        )
+                        if st.button("💾 Save Notes", key=f"save_notes_{case_id}"):
+                            update_case_notes(case_id, notes_value)
+                            st.success("Notes saved.")
+                            st.rerun()
 
-                            if profile_fields:
-                                st.markdown("##### 📋 Patient Health Profile")
-                                card_pieces = []
-                                for icon, label, value, txt, bg in profile_fields:
-                                    card_pieces.append(
-                                        "<div style=\"background:" + bg + "; border-radius:10px; padding:10px 14px; "
-                                        "margin-bottom:8px;\">"
-                                        "<div style=\"font-size:11px; font-weight:700; color:" + txt + "; letter-spacing:0.4px;\">"
-                                        + icon + " " + label.upper() + "</div>"
-                                        "<div style=\"font-size:14px; color:#2C3E50; margin-top:2px;\">"
-                                        + str(value) + "</div>"
-                                        "</div>"
-                                    )
-                                profile_cards_html = "".join(card_pieces)
-                                st.markdown(
-                                    "<div style=\"display:grid; grid-template-columns:repeat(2,1fr); gap:10px;\">"
-                                    + profile_cards_html + "</div>",
-                                    unsafe_allow_html=True,
-                                )
-                            else:
-                                st.caption("📋 No health profile details saved for this patient yet.")
-                        else:
-                            st.caption(
-                                "📋 No saved Health Profile for this patient - allergies and "
-                                "medications won't show here until one is added on the Health Profile tab."
-                            )
+                    # ------------------------------------------
+                    # QUICK ACTIONS - status transitions plus a jump into
+                    # Appointment Prep pre-loaded with this patient, so a
+                    # doctor wrapping up a visit can hand off straight into
+                    # generating next-visit prep without re-selecting the
+                    # patient over on that tab.
+                    # ------------------------------------------
 
-                        if case.get("summary") or case.get("recommendation"):
-                            with st.expander("🧠 AI Assessment", expanded=False):
-                                if case.get("summary"):
-                                    st.markdown("**Clinical Summary**")
-                                    st.write(case["summary"])
-                                if case.get("recommendation"):
-                                    st.markdown("**Recommended Action**")
-                                    st.write(case["recommendation"])
+                    st.markdown("##### 🔄 Update Status")
 
-                        # ------------------------------------------
-                        # DOCTOR CONSULTATION NOTES - genuinely doctor-only
-                        # data that Case History has no equivalent for: a
-                        # persisted free-text note the doctor writes during
-                        # or after seeing the patient, saved back to this case.
-                        # ------------------------------------------
+                    btn1, btn2, btn3, btn4 = st.columns([1, 1, 1, 1.3])
 
-                        with st.expander(
-                            "📝 Consultation Notes" + (" (saved)" if case.get("doctor_notes") else ""),
-                            expanded=False,
+                    with btn1:
+                        if st.button(
+                            "⏳ Pending",
+                            key=f"pending_{case_id}",
+                            disabled=(status == "Pending"),
+                            width="stretch",
                         ):
-                            notes_value = st.text_area(
-                                "Notes",
-                                value=case.get("doctor_notes") or "",
-                                key=f"notes_{case_id}",
-                                label_visibility="collapsed",
-                                placeholder="e.g. Discussed symptoms, ordered CBC, follow up in 1 week...",
-                                height=100,
-                            )
-                            if st.button("💾 Save Notes", key=f"save_notes_{case_id}"):
-                                update_case_notes(case_id, notes_value)
-                                st.success("Notes saved.")
-                                st.rerun()
+                            update_case_status(case_id, "Pending")
+                            st.rerun()
 
-                        # ------------------------------------------
-                        # QUICK ACTIONS - status transitions plus a jump into
-                        # Appointment Prep pre-loaded with this patient, so a
-                        # doctor wrapping up a visit can hand off straight into
-                        # generating next-visit prep without re-selecting the
-                        # patient over on that tab.
-                        # ------------------------------------------
+                    with btn2:
+                        if st.button(
+                            "🩺 In Progress",
+                            key=f"progress_{case_id}",
+                            disabled=(status == "In Progress"),
+                            width="stretch",
+                        ):
+                            update_case_status(case_id, "In Progress")
+                            st.rerun()
 
-                        st.markdown("##### 🔄 Update Status")
+                    with btn3:
+                        if st.button(
+                            "✅ Resolved",
+                            key=f"resolved_{case_id}",
+                            disabled=(status == "Resolved"),
+                            width="stretch",
+                        ):
+                            update_case_status(case_id, "Resolved")
+                            st.rerun()
 
-                        btn1, btn2, btn3, btn4 = st.columns([1, 1, 1, 1.3])
+                    with btn4:
+                        _patient_has_history = str(case["patient_name"]) in get_all_patients_with_history()
+                        if st.button(
+                            "🗓️ Prep next visit",
+                            key=f"prep_link_{case_id}",
+                            disabled=not _patient_has_history,
+                            width="stretch",
+                            help="Preloads this patient on the Appointment Prep tab.",
+                        ):
+                            st.session_state["prep_patient_select"] = str(case["patient_name"])
+                            st.toast(f"{case['patient_name']} is loaded on the Appointment Prep tab.", icon="🗓️")
 
-                        with btn1:
-                            if st.button(
-                                "⏳ Pending",
-                                key=f"pending_{case_id}",
-                                disabled=(status == "Pending"),
-                                width="stretch",
-                            ):
-                                update_case_status(case_id, "Pending")
-                                st.rerun()
+        st.markdown("---")
 
-                        with btn2:
-                            if st.button(
-                                "🩺 In Progress",
-                                key=f"progress_{case_id}",
-                                disabled=(status == "In Progress"),
-                                width="stretch",
-                            ):
-                                update_case_status(case_id, "In Progress")
-                                st.rerun()
-
-                        with btn3:
-                            if st.button(
-                                "✅ Resolved",
-                                key=f"resolved_{case_id}",
-                                disabled=(status == "Resolved"),
-                                width="stretch",
-                            ):
-                                update_case_status(case_id, "Resolved")
-                                st.rerun()
-
-                        with btn4:
-                            _patient_has_history = str(case["patient_name"]) in get_all_patients_with_history()
-                            if st.button(
-                                "🗓️ Prep next visit",
-                                key=f"prep_link_{case_id}",
-                                disabled=not _patient_has_history,
-                                width="stretch",
-                                help="Preloads this patient on the Appointment Prep tab.",
-                            ):
-                                st.session_state["prep_patient_select"] = str(case["patient_name"])
-                                st.toast(f"{case['patient_name']} is loaded on the Appointment Prep tab.", icon="🗓️")
-
-            st.markdown("---")
-    
-# ── Drug Checker LLM (cached so it isn't rebuilt on every rerun) ──
-@st.cache_resource
-def get_drug_llm():
-    return ChatGroq(
-        model="openai/gpt-oss-120b",
-        temperature=0.2,
-        api_key=os.getenv("GROQ_API_KEY"),
-        model_kwargs={"reasoning_effort": "low"}
-    )
-
+# ── Drug Checker & Lab Report LLM clients (cached so they aren't
+# rebuilt on every rerun) - extracted to services/llm_clients.py.
+from services.llm_clients import get_drug_llm, get_lab_llm  # noqa: E402
 
 _drug_llm = get_drug_llm()
-
-
-# ── Lab Report LLM (cached so it isn't rebuilt on every rerun) ──
-@st.cache_resource
-def get_lab_llm():
-    return ChatGroq(
-        model="openai/gpt-oss-120b",
-        temperature=0.1,
-        api_key=os.getenv("GROQ_API_KEY"),
-        model_kwargs={"reasoning_effort": "low"}
-    )
-
-
 _lab_llm = get_lab_llm()
 
-_drug_prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are a clinical pharmacist explaining drug interactions to a patient in plain English.
-You will receive raw OpenFDA adverse event data about two drugs taken together.
-Your job is to summarise what risks exist, how serious they are, and what the patient should do.
+# ── Drug interaction logic (OpenFDA lookup + LLM summarization) -
+# extracted to services/drug_service.py. query_openfda/parse_drug_field
+# are the old _query_openfda/_parse_drug_field, renamed only because
+# they're now this module's public API instead of app.py-local helpers.
+from services.drug_service import (  # noqa: E402
+    query_openfda,
+    parse_drug_field,
+    build_drug_chain,
+)
 
-Respond in this EXACT format:
-SEVERITY: <Major | Moderate | Minor | Unknown>
-PLAIN_SUMMARY: <2-3 sentences explaining the interaction in simple language a patient can understand. No jargon.>
-MECHANISM: <1 sentence explaining WHY this interaction happens, if known.>
-PATIENT_ADVICE: <1-2 sentences on what the patient should do.>
-
-If there is no relevant interaction data found, respond EXACTLY:
-
-SEVERITY: Unknown
-PLAIN_SUMMARY: Insufficient evidence was found in the OpenFDA drug label database to assess this drug combination. This does not mean the combination is safe or unsafe.
-MECHANISM: Not available from the retrieved evidence.
-PATIENT_ADVICE: Consult a doctor or pharmacist for guidance specific to this medication combination.
-
-IMPORTANT:
-- Never infer that a drug combination is safe because no interaction data was found.
-- Never invent potential risks when the retrieved evidence is insufficient.
-- Base the explanation only on the retrieved OpenFDA evidence."""),
-    ("human", "Drug 1: {drug1}\nDrug 2: {drug2}\nOpenFDA Data Summary: {fda_data}")
-])
-
-_drug_chain = _drug_prompt | _drug_llm | StrOutputParser()
-DRUG_NAME_ALIASES = {
-    "pacemol": "acetaminophen",
-    "paracetamol": "acetaminophen",
-    "crocin": "acetaminophen",
-    "calpol": "acetaminophen",
-    "dolo": "acetaminophen",
-    "dolo 650": "acetaminophen",
-
-    "ecosprin": "aspirin",
-    "disprin": "aspirin",
-
-    "brufen": "ibuprofen",
-    "advil": "ibuprofen",
-
-    "augmentin": "amoxicillin clavulanate",
-    "amoxyclav": "amoxicillin clavulanate",
-
-    "zithromax": "azithromycin",
-    "azee": "azithromycin",
-}
-
-
-def normalize_drug_name(drug_name: str) -> str:
-    cleaned_name = drug_name.strip().lower()
-    return DRUG_NAME_ALIASES.get(cleaned_name, cleaned_name)
-
-
-def _query_openfda(drug1: str, drug2: str) -> dict:
-    drug1 = normalize_drug_name(drug1)
-    drug2 = normalize_drug_name(drug2)
-
-    base = "https://api.fda.gov/drug/label.json"
-
-    # Terms allowed for evidence matching.
-    # Keep these conservative to reduce false positives.
-    EVIDENCE_TERMS = {
-        "warfarin": [
-            "warfarin",
-            "coumarin anticoagulant",
-            "coumarin anticoagulants",
-        ],
-        "aspirin": [
-            "aspirin",
-            "acetylsalicylic acid",
-        ],
-        "ibuprofen": [
-            "ibuprofen",
-        ],
-        "acetaminophen": [
-            "acetaminophen",
-            "paracetamol",
-        ],
-        "sertraline": [
-            "sertraline",
-        ],
-        "tramadol": [
-            "tramadol",
-        ],
-    }
-
-    def get_evidence_terms(drug_name: str) -> list:
-        return EVIDENCE_TERMS.get(drug_name, [drug_name])
-
-    def extract_evidence(results: list, target_drug: str) -> list:
-        evidence_found = []
-        target_terms = get_evidence_terms(target_drug)
-
-        for result in results:
-            for section in result.get("drug_interactions", []):
-                sentences = section.replace("\n", " ").split(".")
-
-                for i, sentence in enumerate(sentences):
-                    sentence_lower = sentence.lower()
-
-                    if any(
-                        term.lower() in sentence_lower
-                        for term in target_terms
-                    ):
-                        start = max(0, i - 1)
-                        end = min(len(sentences), i + 2)
-
-                        evidence = ". ".join(
-                            sentences[start:end]
-                        ).strip()
-
-                        if evidence:
-                            evidence_found.append(evidence)
-
-        return evidence_found
-
-    def fetch_labels(drug_name: str) -> list:
-        resp = requests.get(
-            base,
-            params={
-                "search": (
-                    f'(openfda.generic_name:"{drug_name}" OR '
-                    f'openfda.brand_name:"{drug_name}" OR '
-                    f'openfda.substance_name:"{drug_name}")'
-                ),
-                "limit": 100,
-            },
-            timeout=10,
-        )
-
-        if resp.status_code != 200:
-            return []
-
-        return resp.json().get("results", [])
-
-    try:
-        # Fetch FDA labels separately
-        drug1_results = fetch_labels(drug1)
-        drug2_results = fetch_labels(drug2)
-
-        labels_checked = len(drug1_results) + len(drug2_results)
-
-        relevant_interactions = []
-
-        # In Drug 1 labels, search for evidence terms describing Drug 2
-        relevant_interactions.extend(
-            extract_evidence(drug1_results, drug2)
-        )
-
-        # In Drug 2 labels, search for evidence terms describing Drug 1
-        relevant_interactions.extend(
-            extract_evidence(drug2_results, drug1)
-        )
-
-        # Remove duplicate evidence
-        relevant_interactions = list(
-            dict.fromkeys(relevant_interactions)
-        )
-
-        return {
-            "found": len(relevant_interactions) > 0,
-            "count": len(relevant_interactions),
-            "interactions": relevant_interactions[:5],
-            "raw": {
-                "drug1": drug1,
-                "drug2": drug2,
-                "labels_checked": labels_checked,
-            },
-        }
-
-    except Exception as e:
-        return {
-            "found": False,
-            "count": 0,
-            "interactions": [],
-            "raw": {},
-            "error": str(e),
-        }
-
-
-def _parse_drug_field(text: str, field: str) -> str:
-    for line in text.split("\n"):
-        if line.strip().upper().startswith(field.upper() + ":"):
-            return line.split(":", 1)[1].strip()
-    return ""
+_drug_chain = build_drug_chain(_drug_llm)
 
 
 # ── TAB 5 ─────────────────────────────────────────────────────────
@@ -2763,7 +2352,7 @@ with tab5:
             st.warning("Please enter two different drug names.")
         else:
             with st.spinner(f"Querying OpenFDA for {drug1} + {drug2}..."):
-                fda_result = _query_openfda(drug1.strip(), drug2.strip())
+                fda_result = query_openfda(drug1.strip(), drug2.strip())
 
             if "error" in fda_result:
                 st.error(f"OpenFDA API error: {fda_result['error']}")
@@ -2790,10 +2379,10 @@ with tab5:
                     llm_output = ""
 
                 if llm_output:
-                    severity_label = _parse_drug_field(llm_output, "SEVERITY")
-                    plain_summary  = _parse_drug_field(llm_output, "PLAIN_SUMMARY")
-                    mechanism      = _parse_drug_field(llm_output, "MECHANISM")
-                    patient_advice = _parse_drug_field(llm_output, "PATIENT_ADVICE")
+                    severity_label = parse_drug_field(llm_output, "SEVERITY")
+                    plain_summary  = parse_drug_field(llm_output, "PLAIN_SUMMARY")
+                    mechanism      = parse_drug_field(llm_output, "MECHANISM")
+                    patient_advice = parse_drug_field(llm_output, "PATIENT_ADVICE")
 
                     st.markdown("### 📊 Interaction Result")
                     sev_lower = severity_label.lower()
