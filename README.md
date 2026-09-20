@@ -12,7 +12,7 @@
 ![Tests](https://github.com/Aarya0706/mediagent-ai/actions/workflows/tests.yml/badge.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Framework-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-Agentic_AI-00A67E?style=for-the-badge)
-![Groq](https://img.shields.io/badge/Groq-Llama_3-FF6B35?style=for-the-badge)
+![Groq](https://img.shields.io/badge/Groq-GPT--OSS-FF6B35?style=for-the-badge)
 ![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=for-the-badge&logo=sqlite)
 ![OpenFDA](https://img.shields.io/badge/OpenFDA-Live_API-2E8B57?style=for-the-badge)
 
@@ -38,7 +38,7 @@ Unlike traditional symptom checkers, MediAgent AI combines a **Multi-Agent AI ar
 
 The platform provides an end-to-end healthcare experience—from patient symptom analysis and emergency detection to doctor workflow management, AI-powered health conversations, lab report interpretation, appointment preparation, and personalized health profiles.
 
-Built using **LangChain**, **Groq Llama**, **Streamlit**, and **SQLite**, MediAgent AI demonstrates how modern AI systems can enhance healthcare workflows while maintaining transparency through explainable recommendations.
+Built using **LangChain**, **Groq (OpenAI GPT-OSS)**, **Streamlit**, and **SQLite**, MediAgent AI demonstrates how modern AI systems can enhance healthcare workflows while maintaining transparency through explainable recommendations.
 
 ---
 
@@ -61,6 +61,22 @@ The system enables:
 - 📄 PDF report generation
 - 📅 Appointment preparation
 - 🗂️ Long-term patient health profiles
+
+---
+
+# 🧪 Evaluation
+
+AI quality claims in this project are backed by regression suites rather than
+asserted:
+
+- A curated **triage evaluation suite** (`evaluation/evaluate_triage.py`)
+  checks severity/department accuracy and safety-critical behavior
+  (e.g. emergency recall) against a fixed set of cases.
+- A **RAG evaluation suite** (`evaluation/evaluate_rag.py`,
+  `evaluation/rag_cases.json`) checks retrieval quality for the AI Health
+  Chat, including direct-match, synonym, and no-match cases.
+
+See `evaluation/README.md` for methodology and the latest run's results.
 
 ---
 
@@ -172,7 +188,7 @@ L --> Q[🗂️ Health Profile]
 L --> R[📅 Appointment Preparation]
 L --> S[💬 AI Health Chat]
 
-S --> T[Groq Llama + RAG]
+S --> T[Groq GPT-OSS + RAG]
 
 L --> U[📄 PDF Report]
 ```
@@ -243,7 +259,7 @@ allowing recruiters and evaluators to explore the application without registrati
 | Programming Language | Python 3.11 |
 | Frontend | Streamlit |
 | AI Framework | LangChain |
-| Large Language Model | Groq (Llama 3) |
+| Large Language Model | Groq — OpenAI GPT-OSS (`openai/gpt-oss-20b`, override to `openai/gpt-oss-120b` via `GROQ_MODEL`) |
 | Speech Recognition | Groq Whisper |
 | Database | SQLite |
 | Data Processing | Pandas |
