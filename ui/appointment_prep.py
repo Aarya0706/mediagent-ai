@@ -9,6 +9,7 @@ doctor visit. Extracted verbatim from app.py's `with tab7:` block.
 import streamlit as st
 
 from services.llm_clients import get_lab_llm
+from ui.components import show_error_details
 from tools.appointment_prep_tools import (
     get_recent_cases,
     get_recent_lab_reports,
@@ -108,8 +109,9 @@ def render_appointment_prep_tab():
                             **prep_result,
                         }
                     except Exception as e:
-                        st.error("Something went wrong while generating the prep sheet.")
-                        st.exception(e)
+                        show_error_details(
+                            e, "Something went wrong while generating the prep sheet."
+                        )
 
         last_prep = st.session_state.get("prep_last_result")
         if last_prep and last_prep["patient"] == prep_patient_name:

@@ -12,6 +12,7 @@ import plotly.express as px
 import streamlit as st
 
 from services.llm_clients import get_lab_llm
+from ui.components import show_error_details
 from tools.lab_report_tools import (
     ExtractionError,
     extract_text_from_file,
@@ -140,8 +141,9 @@ def render_lab_reports_tab():
             except ExtractionError as e:
                 st.error(str(e))
             except Exception as e:
-                st.error("Something went wrong while analyzing this report.")
-                st.exception(e)
+                show_error_details(
+                    e, "Something went wrong while analyzing this report."
+                )
 
     # Show the most recent analysis, if it belongs to the currently
     # selected patient. Reads from session_state so it survives the
@@ -197,6 +199,12 @@ def render_lab_reports_tab():
 
         with st.expander("View raw extracted text"):
             st.text(last_analysis["raw_text"][:5000])
+
+        st.caption(
+            "ℹ️ This AI-generated summary is for informational purposes only "
+            "and is not a medical interpretation. Always review lab results "
+            "with a qualified healthcare provider."
+        )
 
     st.divider()
 
