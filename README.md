@@ -69,14 +69,60 @@ The system enables:
 AI quality claims in this project are backed by regression suites rather than
 asserted:
 
-- A curated **triage evaluation suite** (`evaluation/evaluate_triage.py`)
-  checks severity/department accuracy and safety-critical behavior
-  (e.g. emergency recall) against a fixed set of cases.
+- A curated **triage evaluation suite** (`evaluation/evaluate_triage.py`,
+  `evaluation/triage_cases.json`) checks severity/department accuracy and
+  safety-critical behavior (emergency recall) against 60 fixed cases,
+  including cases specifically designed to probe the guardrail logic for
+  edge cases.
 - A **RAG evaluation suite** (`evaluation/evaluate_rag.py`,
   `evaluation/rag_cases.json`) checks retrieval quality for the AI Health
-  Chat, including direct-match, synonym, and no-match cases.
+  Chat — direct-match, clinical-synonym, multi-chunk-ranking, and
+  no-confident-match cases — against 13 labeled cases, with no LLM calls
+  required to run it.
 
-See `evaluation/README.md` for methodology and the latest run's results.
+### Latest results
+
+**Triage** (60 cases, full run including live Groq calls):
+
+| Metric | Value |
+|---|---|
+| Severity exact match | 78.9% |
+| Department exact match | 82.5% |
+| Department acceptable match | 91.2% |
+| Emergency detection recall | 94.4% |
+| Emergency detection precision | 100.0% |
+| Invalid-input handling accuracy | 100.0% |
+
+**RAG retrieval** (13 cases, no LLM calls — runs in seconds):
+
+| Metric | Value |
+|---|---|
+| Retrieval recall | 100.0% |
+| Confidence-gate accuracy | 100.0% |
+| Precision | 100.0% |
+
+Numbers change as the suites grow and the models/prompts evolve — see
+`evaluation/results/` for the full history and `evaluation/README.md` for
+methodology.
+
+**A finding, not just a score:** the triage suite includes cases
+specifically designed to probe `apply_triage_guardrails()` (the
+deterministic rule layer that runs immediately after the LLM), and it
+caught a real gap — a textbook surgical emergency (appendicitis) that
+doesn't match any of the ~20 hardcoded red-flag phrases gets silently
+downgraded from the LLM's correct "Critical" call to "Moderate" *before*
+`apply_safety_gate()` (the final structural check) ever sees a "Critical"
+severity to act on. It's an open, documented failure rather than something
+smoothed over — see the "Known limitation" note in the latest
+`evaluation/results/report_*.md`.
+
+Reproduce locally:
+
+```bash
+python evaluation/evaluate_triage.py --dry-run   # validates the case file, no API calls
+python evaluation/evaluate_triage.py             # full run, needs GROQ_API_KEY
+python evaluation/evaluate_rag.py                # retrieval-only, no API key needed
+```
 
 ---
 
@@ -205,6 +251,8 @@ Unlike traditional symptom checkers that rely on a single AI prompt, MediAgent A
 | 🧠 Triage Agent | Determines severity level and urgency |
 | 🏥 Department Router | Recommends the appropriate medical department |
 | 💡 Recommendation Agent | Generates patient-friendly recommendations |
+| 🛡️ Safety Gate | Deterministic second layer (`agents/safety_gate.py`) that runs after every agent, independent of the LLM, and guarantees an emergency case always carries an explicit flag and warning |
+| 🔎 Observability | Every agent call is timed, logged (latency, status, token usage — never symptom/patient content), and surfaced in the Doctor Portal (`agents/observability.py`) |
 | 🗄 Database Layer | Stores patient records for future retrieval |
 | 💬 AI Health Chat | Uses Retrieval-Augmented Generation (RAG) to answer patient-specific questions |
 
@@ -249,6 +297,37 @@ To simplify evaluation, the application also provides:
 - Patient Demo Account
 
 allowing recruiters and evaluators to explore the application without registration.
+
+---
+
+# ⚡ Demo in 3 Minutes
+
+For recruiters and reviewers short on time:
+
+1. **Open the [live demo](https://mediagent-ai-pbgsa8rs7dvyyhbpvydtc7.streamlit.app)** and log in with the Staff or Patient demo account shown on the login screen — no registration needed.
+2. **Submit a symptom** on the Patient Triage tab (try something specific, e.g. "sudden chest pain radiating to my left arm, shortness of breath"). Watch the Multi-Agent pipeline run — Intake → Triage → Recommendation — and note the severity, department, urgency score, and emergency warning if applicable. Download the generated PDF report.
+3. **Switch to a Staff login** and open the **Doctor Portal** tab: the case you just submitted appears in the work queue, sorted by severity. Expand **"🔎 Agent Observability"** to see real latency/success-rate telemetry for the pipeline run you just triggered.
+4. **Try the AI Health Chat** tab as the patient: ask a question about the case you just submitted (e.g. "what did you recommend for my chest pain?") and note the response cites its source — it's grounded in your own record, not a generic answer.
+5. **Check the evaluation suite**: `evaluation/results/` in the repo has the full history of triage and RAG accuracy runs — the numbers in the Evaluation section above aren't asserted, they're generated by running `evaluation/evaluate_triage.py` and `evaluation/evaluate_rag.py` against fixed case sets.
+
+---
+
+# 🔒 Security Model & Limitations
+
+**What's implemented:**
+
+- Passwords are hashed with PBKDF2-HMAC-SHA256 and a random per-user salt (`tools/auth_tools.py`) — never stored in plaintext.
+- Patient data access is enforced at the **query level**, not just hidden in the UI: every read is filtered by `patient_name` in SQL, and a patient-role login can never retrieve another patient's records even if the UI is bypassed (`tools/authorization.py`, covered by `tests/test_authorization.py`).
+- Secrets (`GROQ_API_KEY`, etc.) are read from environment variables / `.env`, which is git-ignored — never committed or hardcoded.
+- Uploaded lab report files are validated by type before processing (`tools/lab_report_tools.py`).
+- All SQL is parameterized throughout the codebase — no string-interpolated queries.
+
+**Known limitations (documented, not hidden):**
+
+- **Identity model**: every table keys off `patient_name` (a free-text, case-insensitive string) rather than a real `patient_id` foreign key into a dedicated `patients` table — see the note at the top of `database/schema.py` for why this is a deliberately scoped-out normalization gap rather than something silently left unconsidered. Two patients sharing a name would collide under the current model.
+- **Not production-ready for real PHI**: this is an educational/portfolio project. There's no encryption at rest, no audit logging of individual record access, and no HIPAA/data-protection compliance review. Do not use it to store real patient data.
+- **Single-instance SQLite**: no built-in high-availability, replication, or concurrent-write scaling — fine for a demo, not for a multi-tenant production deployment.
+- **AI confidence scores are not clinically validated** — they reflect model self-reported confidence, not a calibrated clinical probability. See the Disclaimer section below.
 
 ---
 
@@ -571,7 +650,12 @@ pip install -r requirements.txt
 Create a `.env` file
 
 ```env
+# Required
 GROQ_API_KEY=YOUR_GROQ_API_KEY
+
+# Optional - both have working defaults, override only if needed
+GROQ_MODEL=openai/gpt-oss-20b        # model used by the triage pipeline
+PUBMED_CONTACT_EMAIL=you@example.com  # polite identification for NCBI E-utilities (AI Health Chat's PubMed fallback)
 ```
 
 Run the application
@@ -579,6 +663,20 @@ Run the application
 ```bash
 streamlit run app.py
 ```
+
+On first run, `database/migrations.py` creates `data/hospital.db` and every table automatically — no manual setup step needed.
+
+---
+
+# ✅ Testing & CI
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v      # 55 tests: safety gate, authorization, migrations, RAG retrieval, observability, report/drug services
+ruff check . --select E9,F   # same lint check CI runs
+```
+
+Every push and pull request runs both automatically via GitHub Actions (`.github/workflows/tests.yml`) — see the badge at the top of this README.
 
 ---
 
