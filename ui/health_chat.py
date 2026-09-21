@@ -13,6 +13,7 @@ import streamlit as st
 
 from services.llm_clients import get_lab_llm
 from tools.appointment_prep_tools import get_all_patients_with_history
+from ui.components import show_error_details
 from tools.chat_rag_tools import (
     get_patient_chunks,
     has_any_chunks,
@@ -34,6 +35,11 @@ def render_health_chat_tab():
         "records (not a trained embedding model), with a PubMed literature fallback when your "
         "own records don't confidently cover the question. Chat history is kept for this "
         "session only - it isn't saved once you close the app."
+    )
+    st.caption(
+        "ℹ️ Responses are AI-generated and for informational purposes only - "
+        "not a medical diagnosis or advice. Always consult a qualified "
+        "healthcare provider for medical decisions."
     )
 
     st.divider()
@@ -133,7 +139,7 @@ def render_health_chat_tab():
                             "sources": [],
                         }
                         used_pubmed = False
-                        st.exception(e)
+                        show_error_details(e)
 
                     if used_pubmed:
                         st.caption(

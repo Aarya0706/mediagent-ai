@@ -3,13 +3,18 @@ ui/patient_triage.py
 -----------------------
 Tab 1 - "Patient Triage": the symptom-intake form, the multi-agent
 triage pipeline call, and the resulting AI assessment + PDF report
-download. Extracted verbatim from app.py's `with tab1:` block - no
-logic changes, only the wrapping function and the imports it now
-needs explicitly instead of inheriting them as module globals.
+download. Extracted from app.py's `with tab1:` block.
+
+UX fix: the pipeline call used to sit behind a progress bar that
+jumped to 10% before the (single, blocking, 10-20 second) pipeline
+call and only moved again after it returned - so for the whole real
+wait, the UI showed "Agent 1/3" frozen at 10%, which misrepresented
+what was actually happening. Replaced with an honest spinner that
+stays active for the actual duration of the call and sets accurate
+time expectations instead of faking incremental progress.
 """
 
 import os
-import time
 
 import streamlit as st
 from groq import Groq
@@ -18,6 +23,7 @@ from agents.pipeline import run_triage_pipeline
 from services.report_service import generate_pdf_report
 from tools.health_profile_tools import get_profile, upsert_profile
 from tools.save_case import save_case_to_db
+from ui.components import show_error_details
 from zoneinfo import ZoneInfo
 from datetime import datetime
 
@@ -344,49 +350,26 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
                 f"Age: {age}, Gender: {gender}"
             )
 
-            progress_bar = st.progress(0)
-            status = st.empty()
+            with st.spinner(
+                "🤖 Running the multi-agent triage pipeline "
+                "(Intake → Triage → Recommendation)... "
+                "this typically takes 10-20 seconds."
+            ):
+                try:
+                    result = run_triage_pipeline(
+                        symptoms,
+                        patient_context,
+                    )
 
-            status.markdown(
-                "🔍 **Agent 1/3:** "
-                "Validating and normalising intake..."
-            )
-            progress_bar.progress(10)
+                except Exception as e:
+                    st.error(
+                        "The triage pipeline failed to run."
+                    )
+                    show_error_details(e)
 
-            try:
-                result = run_triage_pipeline(
-                    symptoms,
-                    patient_context,
-                )
-
-            except Exception as e:
-                progress_bar.empty()
-                status.empty()
-
-                st.error(
-                    "The triage pipeline failed to run."
-                )
-                st.exception(e)
-
-                result = None
+                    result = None
 
             if result is not None:
-                progress_bar.progress(70)
-
-                status.markdown(
-                    "📋 **Agent 3/3:** "
-                    "Generating recommendations..."
-                )
-
-                time.sleep(0.3)
-
-                progress_bar.progress(100)
-
-                time.sleep(0.2)
-
-                progress_bar.empty()
-                status.empty()
-
                 if not result.get("valid"):
                     st.error(
                         "Could not process input: "
@@ -496,6 +479,13 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
                             f"{warning}"
                         )
 
+                    st.caption(
+                        "ℹ️ This is preliminary AI-assisted triage information, "
+                        "not a medical diagnosis. It does not replace professional "
+                        "medical advice - always consult a qualified healthcare "
+                        "provider for medical decisions."
+                    )
+
                     try:
                         save_case_to_db(
                             patient_name=patient_name.strip() or "Unknown",
@@ -565,4 +555,8 @@ Allergies: {allergies.strip() or "None reported"}""".strip()
                         )
 
                     except Exception as e:
-                        st.exception(e)
+                        show_error_details(
+                            e,
+                            "Your assessment was generated, but the PDF "
+                            "report couldn't be created.",
+                        )

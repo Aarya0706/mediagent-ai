@@ -9,6 +9,19 @@ render_landing_stat_cards, extracted verbatim from app.py.
 import streamlit as st
 
 
+def show_error_details(exception, message=None):
+    """Friendly-first error display: an optional plain-English message
+    up front, with the raw exception tucked into a collapsed expander
+    instead of dumped straight into the page via a bare st.exception().
+    A patient hitting an LLM/API failure shouldn't be shown a Python
+    traceback by default - but the detail should still be one click
+    away for debugging, not hidden entirely."""
+    if message:
+        st.error(message)
+    with st.expander("Technical details"):
+        st.exception(exception)
+
+
 def render_landing_stat_cards(items):
     """Render a row of small bordered stat cards (icon, label, value, accent
     color) instead of bare st.metric() calls. st.metric() on its own has no

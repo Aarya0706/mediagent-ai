@@ -10,6 +10,7 @@ import streamlit as st
 
 from services.drug_service import build_drug_chain, parse_drug_field, query_openfda
 from services.llm_clients import get_drug_llm
+from ui.components import show_error_details
 
 _drug_chain = build_drug_chain(get_drug_llm())
 
@@ -87,8 +88,9 @@ def render_drug_checker_tab():
                             "fda_data": fda_summary,
                         })
                 except Exception as e:
-                    st.error("The clinical explanation could not be generated.")
-                    st.exception(e)
+                    show_error_details(
+                        e, "The clinical explanation could not be generated."
+                    )
                     llm_output = ""
 
                 if llm_output:
