@@ -720,15 +720,16 @@ The platform provides AI-assisted clinical decision support and preliminary reco
 
 # 👩‍💻 Author
 
+<div align="center">
+
 ## Aarya Shirsath
 
-**B.Tech Computer Science & Engineering**  
-**VIT Bhopal University**
+**B.Tech Computer Science & Engineering — VIT Bhopal University**
 
-### Connect with me
+[![GitHub](https://img.shields.io/badge/GITHUB-Aarya0706-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Aarya0706)
+[![LinkedIn](https://img.shields.io/badge/LINKEDIN-Aarya_Shirsath-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/aarya-shirsath-9b7684340/)
 
-- GitHub: https://github.com/Aarya0706
-- LinkedIn: https://www.linkedin.com/in/aarya-shirsath-9b7684340/
+</div>
 
 ---
 
