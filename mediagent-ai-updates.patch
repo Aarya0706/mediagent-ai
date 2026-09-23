@@ -1,0 +1,834 @@
+diff --git a/README.md b/README.md
+index 9f4ac9c..80fd110 100644
+--- a/README.md
++++ b/README.md
+@@ -4,7 +4,7 @@
+ 
+ ### Agentic AI Clinical Decision Support Platform
+ 
+-*Transforming hospital triage and clinical decision-making through Multi-Agent AI, intelligent healthcare workflows, and real-time patient analytics.*
++*Multi-agent triage with deterministic safety guardrails, patient-scoped RAG, runtime observability, and automated evaluation — measured, not just claimed.*
+ 
+ <p align="center">
+ 
+@@ -32,13 +32,11 @@
+ 
+ # 📖 Overview
+ 
+-MediAgent AI is an **Agentic AI Clinical Decision Support Platform** designed to assist both patients and healthcare professionals throughout the clinical assessment workflow.
++MediAgent AI is an **agentic AI clinical workflow platform**: a 3-agent LangChain pipeline (Intake → Triage → Recommendation) sits behind deterministic safety guardrails, patient-scoped RAG retrieval, per-run observability, and regression-tested evaluation suites — the parts of an AI system that are usually the hardest to get right and the easiest to skip in a portfolio project.
+ 
+-Unlike traditional symptom checkers, MediAgent AI combines a **Multi-Agent AI architecture**, structured medical workflows, real-time analytics, and intelligent clinical reasoning to support hospital triage, patient management, and decision-making.
++The clinical feature set (symptom triage, emergency detection, doctor workflow, AI-powered health chat, lab report interpretation, appointment prep, health profiles) is the surface. What backs it: safety logic that runs *after* the LLM and can't be talked out of its rules, retrieval that's evaluated against labeled cases instead of eyeballed, and telemetry on every pipeline run rather than a black box.
+ 
+-The platform provides an end-to-end healthcare experience—from patient symptom analysis and emergency detection to doctor workflow management, AI-powered health conversations, lab report interpretation, appointment preparation, and personalized health profiles.
+-
+-Built using **LangChain**, **Groq (OpenAI GPT-OSS)**, **Streamlit**, and **SQLite**, MediAgent AI demonstrates how modern AI systems can enhance healthcare workflows while maintaining transparency through explainable recommendations.
++Built using **LangChain**, **Groq (OpenAI GPT-OSS)**, **Streamlit**, and **SQLite** — see the **Evaluation** section below for the numbers these claims are backed by, and **Security Model & Limitations** for what's explicitly still scoped out.
+ 
+ ---
+ 
+@@ -584,8 +582,9 @@ Patients can maintain a persistent digital health profile that is automatically
+ mediagent-ai/
+ │
+ ├── agents/                  # Multi-Agent AI pipeline
+-│   ├── orchestrator.py
+-│   └── pipeline.py
++│   ├── pipeline.py          #   3-agent Intake → Triage → Recommend chain (production)
++│   ├── safety_gate.py       #   deterministic emergency/red-flag overrides
++│   └── observability.py     #   per-run latency/status logging
+ │
+ ├── database/                # Database initialization & schema
+ │   ├── connection.py        #   single get_connection() / DB_PATH
+diff --git a/agents/orchestrator.py b/agents/orchestrator.py
+deleted file mode 100644
+index e5dc1e0..0000000
+--- a/agents/orchestrator.py
++++ /dev/null
+@@ -1,181 +0,0 @@
+-import sys
+-import os
+-import re
+-
+-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+-from dotenv import load_dotenv
+-import os
+-
+-from langchain_groq import ChatGroq
+-from langchain.agents import create_tool_calling_agent, AgentExecutor
+-from langchain_core.prompts import ChatPromptTemplate
+-
+-from tools.emergency_checker import check_emergency_severity
+-from tools.department_router import get_department_reference_list
+-from tools.save_case import save_case_to_db
+-
+-# Load API key from .env
+-
+- 
+-
+-load_dotenv(dotenv_path=".env")
+-
+- 
+-
+-# LLM
+-llm = ChatGroq(
+-    model="llama-3.3-70b-versatile",
+-    temperature=0.2
+-)
+-
+-# Available tools
+-tools = [
+-    check_emergency_severity,
+-    get_department_reference_list,
+-    save_case_to_db
+-]
+-
+-# System prompt
+-prompt = ChatPromptTemplate.from_messages(
+-    [
+-        (
+-            "system",
+-            """
+-            You are an intelligent healthcare triage assistant.
+-
+-            Analyze the patient's symptoms, symptom duration, onset, pain level,
+-            known medical conditions, medications, and allergies.
+-
+-            You MUST call check_emergency_severity first.
+-            Use the available tools when required.
+-
+-            Your final answer MUST follow this exact format:
+-
+-            Severity: <Mild/Moderate/Critical>
+-
+-            Department: <Recommended Department>
+-
+-            Summary: <2-4 sentence patient-friendly assessment explaining the symptoms,
+-            possible concerns, and why the recommended department is appropriate.
+-            Do not claim a confirmed diagnosis.>
+-
+-            Actions:
+-            1. <A safe, immediate self-care or precautionary action specific to the patient's symptoms.>
+-            2. <A second symptom-specific action explaining what the patient should avoid, monitor, or do next.>
+-            3. <A clear recommendation about when and where to seek medical evaluation based on severity and duration.>
+-            4. <Specific red-flag symptoms to watch for that would require urgent medical attention.>
+-
+-            Rules:
+-            - Always assess severity first.
+-            - Recommend the most appropriate department.
+-            - Give exactly 4 actions.
+-            - Every action MUST be specific to the patient's symptoms, body area, severity, duration, and onset.
+-            - Use the patient's known conditions, medications, and allergies when relevant.
+-            - Do not give generic advice such as "stay calm", "drink water", "get rest", or "monitor symptoms" unless it is specifically relevant to the patient's symptoms.
+-            - Do not repeatedly tell every patient to come to the hospital.
+-            - For Mild cases, prioritize safe self-care, symptom monitoring, and appropriate routine follow-up.
+-            - For Moderate cases, provide safe interim care and recommend timely medical evaluation.
+-            - For Critical cases, clearly instruct the patient to seek emergency medical care immediately.
+-            - Do not recommend prescription medications.
+-            - Do not provide medication dosages.
+-            - Do not recommend over-the-counter medication unless it is clearly appropriate to the symptoms and include a brief safety qualification.
+-            - Never claim or imply a confirmed diagnosis.
+-            - Do not exaggerate emergency risk.
+-            - Red-flag advice must be specific to the patient's symptoms.
+-            - Avoid repeating the same advice in multiple actions.
+-            - Be concise, patient-friendly, medically cautious, and professional.
+-            - Never leave any section empty.
+-            - Never include tool calls in the final response.
+-            - Never display <function> tags.
+-            - Use tools internally only.
+-            """
+-            
+-             
+-            
+-             
+-            
+-        ),
+-        ("human", "{input}"),
+-        ("placeholder", "{agent_scratchpad}")
+-    ]
+-)
+-
+-# Create tool-calling agent
+-agent = create_tool_calling_agent(
+-    llm=llm,
+-    tools=tools,
+-    prompt=prompt
+-)
+-
+-# Executor
+-agent_executor = AgentExecutor(
+-    agent=agent,
+-    tools=tools,
+-    verbose=True
+-)
+- 
+-
+-def run_triage_pipeline(symptoms: str, patient_context: str) -> dict:
+-    if not symptoms or not symptoms.strip():
+-        return {"valid": False, "invalid_reason": "No symptoms provided."}
+-
+-    intake_text = f"Patient Context: {patient_context}\n\nSymptoms:\n{symptoms}"
+-
+-    try:
+-        result = agent_executor.invoke({"input": intake_text})
+-        output_text = result.get("output", "")
+-    except Exception as e:
+-        return {"valid": False, "invalid_reason": f"Agent error: {str(e)}"}
+-
+-    def extract_field(text, field):
+-        match = re.search(rf"{field}:\s*(.+)", text)
+-        return match.group(1).strip() if match else ""
+-
+-    severity   = extract_field(output_text, "Severity") or "Moderate"
+-    department = extract_field(output_text, "Department") or "General Medicine"
+-    summary    = extract_field(output_text, "Summary") or output_text.strip()
+-
+-    actions = re.findall(r"\d+\.\s*(.+)", output_text)
+-    if not actions:
+-        actions = ["Consult a physician for further evaluation."]
+-
+-    # Pull the actual reported pain/discomfort level out of the intake text
+-    pain_match = re.search(r"Pain/Discomfort Level:\s*(\d+)/10", intake_text)
+-    pain_level = int(pain_match.group(1)) if pain_match else 5
+-
+-    severity_base = {"critical": 8, "moderate": 5, "mild": 2}.get(severity.lower(), 5)
+-
+-    # Blend severity label with actual reported pain level, so specifics of
+-    # the case (not just the 3-bucket label) affect the final score
+-    urgency_score = min(10, max(1, round((severity_base + pain_level) / 2)))
+-
+-    warning = "Seek emergency care immediately if symptoms worsen." if severity.lower() == "critical" else ""
+-
+-    return {
+-        "valid": True,
+-        "severity": severity,
+-        "department": department,
+-        "urgency_score": urgency_score,
+-        "triage_reasoning": output_text,
+-        "intake": intake_text,
+-        "summary": summary,
+-        "actions": actions,
+-        "warning": warning,
+-    }
+-
+-if __name__ == "__main__":
+-
+-    while True:
+-        user_input = input("\nPatient Symptoms (type exit to quit): ")
+-
+-        if user_input.lower() == "exit":
+-            break
+-
+-        result = agent_executor.invoke(
+-            {
+-                "input": user_input
+-            }
+-        )
+-
+-        print("\nAI RESPONSE:")
+-        print(result["output"])
+\ No newline at end of file
+diff --git a/database/migrations.py b/database/migrations.py
+index d74b50f..e0e0442 100644
+--- a/database/migrations.py
++++ b/database/migrations.py
+@@ -27,12 +27,19 @@ Usage:
+ from database.connection import get_connection
+ from database.schema import TABLES
+ 
++# Every table (other than `patients` itself) that carries a
++# patient_name + patient_id pair needing backfill. `users` is included
++# because patient-role logins are also part of the identity model - see
++# _backfill_patient_ids() below and the note at the bottom of schema.py.
++_PATIENT_SCOPED_TABLES = ("users", "cases", "health_profile", "lab_reports", "lab_values")
++
+ 
+ def run_migrations():
+-    """Creates every table in TABLES if missing, and adds any column
++    """Creates every table in TABLES if missing, adds any column
+     present in TABLES but missing from an existing table (using that
+-    column's real type/default, not a guess). Returns a dict of
+-    {table_name: [columns_added]} for anything that changed, so
++    column's real type/default, not a guess), and backfills patient_id
++    on every patient-scoped row that doesn't have one yet. Returns a
++    dict of {table_name: [columns_added]} for anything that changed, so
+     callers/tests can see what happened - usually empty."""
+     added = {}
+ 
+@@ -61,9 +68,58 @@ def run_migrations():
+ 
+         conn.commit()
+ 
++        backfilled = _backfill_patient_ids(conn)
++        if backfilled:
++            added.setdefault("patients", []).append(f"backfilled {backfilled} row(s)")
++
+     return added
+ 
+ 
++def _backfill_patient_ids(conn):
++    """For every row in _PATIENT_SCOPED_TABLES with a NULL patient_id
++    and a non-blank patient_name, resolves (or creates) a `patients`
++    row via database.patients.get_or_create_patient() and sets
++    patient_id. Idempotent: rows that already have a patient_id are
++    skipped, so this is a no-op on every run after the first. Returns
++    the total number of rows updated, for callers/tests.
++
++    Import is local (not top-of-file) to avoid a circular import -
++    database.patients imports get_connection from this package too."""
++    from database.patients import get_or_create_patient
++
++    cursor = conn.cursor()
++    total_updated = 0
++
++    for table_name in _PATIENT_SCOPED_TABLES:
++        cursor.execute(f"PRAGMA table_info({table_name})")
++        columns = {row["name"] for row in cursor.fetchall()}
++        if "patient_id" not in columns or "patient_name" not in columns:
++            continue
++
++        id_column = "id" if "id" in columns else "patient_name"
++
++        cursor.execute(
++            f"SELECT {id_column} AS row_key, patient_name FROM {table_name} "
++            f"WHERE patient_id IS NULL AND patient_name IS NOT NULL AND TRIM(patient_name) != ''"
++        )
++        rows = cursor.fetchall()
++
++        for row in rows:
++            patient_id = get_or_create_patient(row["patient_name"], conn=conn)
++            if patient_id is None:
++                continue
++            cursor.execute(
++                f"UPDATE {table_name} SET patient_id = ? WHERE {id_column} = ?",
++                (patient_id, row["row_key"]),
++            )
++            total_updated += 1
++
++    if total_updated:
++        conn.commit()
++
++    return total_updated
++
++
+ if __name__ == "__main__":
+     result = run_migrations()
+     if result:
+diff --git a/database/patients.py b/database/patients.py
+new file mode 100644
+index 0000000..8e0140e
+--- /dev/null
++++ b/database/patients.py
+@@ -0,0 +1,102 @@
++"""
++database/patients.py
++----------------------
++Resolves a stable `patient_id` for a display name, backed by the new
++`patients` table (database/schema.py). This is the first piece of the
++patient_id migration described in the KNOWN LIMITATION note at the
++bottom of schema.py: a `patients` table now exists, and this module is
++the one place that knows how to normalize a name and look up or create
++its row - so every future call site that needs a patient_id (the
++startup backfill in migrations.py, signup in tools/auth_tools.py, and
++eventually the query-site rewrite) goes through the same normalization
++logic instead of five different ad-hoc `.strip().lower()` calls.
++
++Normalization: trim, collapse internal whitespace, lowercase. This is
++deliberately simple (no fuzzy matching, no nickname handling) so it's
++predictable and auditable - two names that normalize to the same string
++are treated as the same patient; anything else is a different patient,
++even if a human would recognize them as the same person. That's a
++reasonable default for a portfolio project's demo data, but it's worth
++being explicit that it's a real limitation: a typo'd name creates a new
++patient rather than matching an existing one.
++"""
++
++import re
++from datetime import datetime
++from zoneinfo import ZoneInfo
++
++from database.connection import get_connection
++
++IST = ZoneInfo("Asia/Kolkata")
++
++
++def normalize_name(name):
++    """Trim, collapse internal whitespace, lowercase. Returns "" for
++    None/blank input rather than raising, so callers can check
++    truthiness instead of catching exceptions."""
++    if not name:
++        return ""
++    return re.sub(r"\s+", " ", name.strip()).lower()
++
++
++def find_patient_id(name, conn=None):
++    """Returns the existing patient_id for `name`, or None if no
++    patient with that normalized name exists yet. Never creates a row -
++    use get_or_create_patient() when a new patient should be
++    provisioned."""
++    normalized = normalize_name(name)
++    if not normalized:
++        return None
++
++    owns_connection = conn is None
++    conn = conn or get_connection()
++    try:
++        cursor = conn.cursor()
++        cursor.execute(
++            "SELECT id FROM patients WHERE normalized_name = ?",
++            (normalized,),
++        )
++        row = cursor.fetchone()
++        return row["id"] if row else None
++    finally:
++        if owns_connection:
++            conn.close()
++
++
++def get_or_create_patient(name, conn=None):
++    """Returns the patient_id for `name`, creating a new `patients` row
++    if one doesn't exist yet for this normalized name. Returns None for
++    blank/None input rather than creating a row for an empty identity.
++
++    Safe to call concurrently: normalized_name is UNIQUE, so a race
++    that tries to insert the same normalized name twice raises
++    sqlite3.IntegrityError on the second insert, which is caught here
++    and re-resolved with a lookup instead of propagating."""
++    normalized = normalize_name(name)
++    if not normalized:
++        return None
++
++    owns_connection = conn is None
++    conn = conn or get_connection()
++    try:
++        existing = find_patient_id(name, conn=conn)
++        if existing is not None:
++            return existing
++
++        try:
++            cursor = conn.cursor()
++            cursor.execute(
++                "INSERT INTO patients (display_name, normalized_name, created_at) VALUES (?, ?, ?)",
++                (name.strip(), normalized, datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")),
++            )
++            if owns_connection:
++                conn.commit()
++            return cursor.lastrowid
++        except Exception:
++            # Most likely a UNIQUE constraint race (another call created
++            # the same normalized_name between the lookup above and this
++            # insert) - re-resolve rather than fail the caller.
++            return find_patient_id(name, conn=conn)
++    finally:
++        if owns_connection:
++            conn.close()
+diff --git a/database/schema.py b/database/schema.py
+index f4b930b..dcc4a92 100644
+--- a/database/schema.py
++++ b/database/schema.py
+@@ -28,6 +28,23 @@ default it would have gotten in a fresh CREATE TABLE - see that module.
+ """
+ 
+ TABLES = {
++    "patients": (
++        """
++        CREATE TABLE IF NOT EXISTS patients (
++            id INTEGER PRIMARY KEY AUTOINCREMENT,
++            display_name TEXT NOT NULL,
++            normalized_name TEXT NOT NULL UNIQUE,
++            created_at TEXT NOT NULL
++        )
++        """,
++        {
++            "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
++            "display_name": "TEXT NOT NULL",
++            "normalized_name": "TEXT NOT NULL",
++            "created_at": "TEXT NOT NULL",
++        },
++    ),
++
+     "users": (
+         """
+         CREATE TABLE IF NOT EXISTS users (
+@@ -38,6 +55,7 @@ TABLES = {
+             password_hash TEXT NOT NULL,
+             role TEXT NOT NULL DEFAULT 'staff',
+             patient_name TEXT,
++            patient_id INTEGER,
+             created_at TEXT NOT NULL,
+             updated_at TEXT
+         )
+@@ -50,6 +68,7 @@ TABLES = {
+             "password_hash": "TEXT NOT NULL",
+             "role": "TEXT NOT NULL DEFAULT 'staff'",
+             "patient_name": "TEXT",
++            "patient_id": "INTEGER",
+             "created_at": "TEXT NOT NULL",
+             "updated_at": "TEXT",
+         },
+@@ -60,6 +79,7 @@ TABLES = {
+         CREATE TABLE IF NOT EXISTS cases (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             patient_name TEXT NOT NULL,
++            patient_id INTEGER,
+             symptoms TEXT NOT NULL,
+             severity TEXT NOT NULL,
+             department TEXT NOT NULL,
+@@ -74,6 +94,7 @@ TABLES = {
+         {
+             "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+             "patient_name": "TEXT NOT NULL DEFAULT 'Unknown'",
++            "patient_id": "INTEGER",
+             "symptoms": "TEXT NOT NULL",
+             "severity": "TEXT NOT NULL",
+             "department": "TEXT NOT NULL",
+@@ -90,6 +111,7 @@ TABLES = {
+         """
+         CREATE TABLE IF NOT EXISTS health_profile (
+             patient_name TEXT PRIMARY KEY COLLATE NOCASE,
++            patient_id INTEGER,
+             age INTEGER,
+             gender TEXT,
+             blood_group TEXT,
+@@ -103,6 +125,7 @@ TABLES = {
+         """,
+         {
+             "patient_name": "TEXT PRIMARY KEY COLLATE NOCASE",
++            "patient_id": "INTEGER",
+             "age": "INTEGER",
+             "gender": "TEXT",
+             "blood_group": "TEXT",
+@@ -120,6 +143,7 @@ TABLES = {
+         CREATE TABLE IF NOT EXISTS lab_reports (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             patient_name TEXT NOT NULL,
++            patient_id INTEGER,
+             file_name TEXT NOT NULL,
+             raw_text TEXT DEFAULT '',
+             ai_summary TEXT DEFAULT '',
+@@ -130,6 +154,7 @@ TABLES = {
+         {
+             "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+             "patient_name": "TEXT NOT NULL",
++            "patient_id": "INTEGER",
+             "file_name": "TEXT NOT NULL",
+             "raw_text": "TEXT DEFAULT ''",
+             "ai_summary": "TEXT DEFAULT ''",
+@@ -144,6 +169,7 @@ TABLES = {
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             report_id INTEGER NOT NULL,
+             patient_name TEXT NOT NULL,
++            patient_id INTEGER,
+             parameter TEXT NOT NULL,
+             value REAL,
+             unit TEXT DEFAULT '',
+@@ -158,6 +184,7 @@ TABLES = {
+             "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+             "report_id": "INTEGER NOT NULL",
+             "patient_name": "TEXT NOT NULL",
++            "patient_id": "INTEGER",
+             "parameter": "TEXT NOT NULL",
+             "value": "REAL",
+             "unit": "TEXT DEFAULT ''",
+@@ -177,26 +204,30 @@ TABLES = {
+ 
+ 
+ # ============================================================
+-# KNOWN LIMITATION: patient_name as the join key, not a real FK
++# IDENTITY MODEL: patient_id migration, in progress
+ # ============================================================
+ #
+-# Every table above keys off `patient_name` (a free-text, case-
+-# insensitive string) rather than a `patient_id` foreign key into a
+-# `patients` table. `users.patient_name` is the sole source of truth
+-# for which records a patient-role login can see (tools/authorization.py)
+-# - so this isn't just an inconsistency, it's the actual identity model
+-# the whole app is built on.
++# Every table above now HAS a `patient_id` column pointing at the new
++# `patients` table (see database/patients.py for get_or_create_patient()
++# / find_patient_id()), and database/migrations.py backfills it
++# automatically on every startup for any row where it's still NULL,
++# matching by a normalized (trimmed, lowercased, whitespace-collapsed)
++# version of patient_name. tools/auth_tools.py now also resolves and
++# stores patient_id on every patient-role signup, and refuses to create
++# a second patient-role login against a patient_id that's already
++# claimed - the actual name-collision security hole this migration
++# exists to close.
+ #
+-# This is a real normalization gap (two patients who share a name would
+-# collide; renaming a patient means updating every table). It is NOT
+-# fixed here on purpose: doing it properly means (1) adding a `patients`
+-# table, (2) backfilling a `patient_id` on every existing row in cases /
+-# health_profile / lab_reports / lab_values / users against whatever
+-# real data already lives in data/hospital.db on the deployed instance,
+-# and (3) rewriting every query site (tools/*.py, app.py, tools/
+-# chat_rag_tools.py, tools/authorization.py) to join on the new id.
+-# That's a live-data migration with real corruption risk if the name-
+-# matching backfill logic gets an edge case wrong (e.g. two differently-
+-# cased spellings of the same patient), not a schema-only cleanup - it
+-# deserves its own pass with a backup of the real database in hand,
+-# not one folded silently into this one.
++# What this does NOT do yet: none of the read/write query sites in
++# tools/*.py, app.py, or ui/*.py have been switched to filter or join
++# on patient_id instead of patient_name - they still read/write
++# patient_name exactly as before, so nothing about existing behavior
++# changes yet. `patient_id` is populated and available, but
++# `patient_name` remains the column every query actually uses. That
++# query-by-query rewrite (tools/save_case.py, tools/lab_report_tools.py,
++# tools/health_profile_tools.py, tools/chat_rag_tools.py,
++# tools/authorization.py's can_access_patient_record(), etc.) is a
++# separate, larger pass - deliberately not folded in here, since it
++# touches how every screen reads data and deserves to be done (and
++# tested against a real backup of data/hospital.db) on its own, not
++# silently bundled into a schema change.
+diff --git a/evaluation/results/rag_report_20260922_135515.md b/evaluation/results/rag_report_20260922_135515.md
+new file mode 100644
+index 0000000..43dbd5e
+--- /dev/null
++++ b/evaluation/results/rag_report_20260922_135515.md
+@@ -0,0 +1,8 @@
++# RAG Retrieval Evaluation — 20260922_135515
++
++## Aggregate metrics
++
++- **total_cases**: 13
++- **retrieval_recall_pct**: 100.0
++- **confidence_accuracy_pct**: 100.0
++- **avg_precision_pct**: 100.0
+\ No newline at end of file
+diff --git a/evaluation/results/rag_run_20260922_135515.json b/evaluation/results/rag_run_20260922_135515.json
+new file mode 100644
+index 0000000..9d366d4
+--- /dev/null
++++ b/evaluation/results/rag_run_20260922_135515.json
+@@ -0,0 +1,216 @@
++{
++  "metrics": {
++    "total_cases": 13,
++    "retrieval_recall_pct": 100.0,
++    "confidence_accuracy_pct": 100.0,
++    "avg_precision_pct": 100.0
++  },
++  "records": [
++    {
++      "id": "RAG-001",
++      "category": "direct_match",
++      "question": "What was my hemoglobin level?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-03-01 (cbc_march.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-03-01 (cbc_march.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-002",
++      "category": "synonym_expansion",
++      "question": "Do I have diabetes?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-04-12 (metabolic_panel.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-04-12 (metabolic_panel.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-003",
++      "category": "synonym_expansion",
++      "question": "Is my kidney function okay?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-05-05 (renal_panel.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-05-05 (renal_panel.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-004",
++      "category": "synonym_expansion",
++      "question": "Should I be worried about my heart given these results?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-06-01 (lipid_panel.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-06-01 (lipid_panel.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-005",
++      "category": "synonym_expansion",
++      "question": "What's going on with my thyroid?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-06-15 (thyroid_panel.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-06-15 (thyroid_panel.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-006",
++      "category": "synonym_expansion",
++      "question": "I've been bruising easily, is that linked to my bloodwork?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-07-01 (cbc.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-07-01 (cbc.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-007",
++      "category": "synonym_expansion",
++      "question": "Does my bloodwork show any signs of infection?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-07-10 (cbc.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-07-10 (cbc.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-008",
++      "category": "synonym_expansion",
++      "question": "How has my blood pressure been trending?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Symptom checker case from 2026-07-15"
++      ],
++      "retrieved_sources": [
++        "Symptom checker case from 2026-07-15"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-009",
++      "category": "multi_chunk_ranking",
++      "question": "What did my most recent CBC show for anemia?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-08-01 (cbc_august.pdf)",
++        "Symptom checker case from 2026-07-28"
++      ],
++      "retrieved_sources": [
++        "Symptom checker case from 2026-07-28",
++        "Lab report from 2026-08-01 (cbc_august.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-010",
++      "category": "no_confident_match",
++      "question": "What foods are generally good for heart health?",
++      "expected_confident": false,
++      "actual_confident": false,
++      "confidence_correct": true,
++      "expected_relevant_sources": [],
++      "retrieved_sources": [
++        "Symptom checker case from 2026-05-11",
++        "Lab report from 2026-05-11 (vitamin_panel.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": null
++    },
++    {
++      "id": "RAG-011",
++      "category": "empty_records",
++      "question": "What do my lab results show?",
++      "expected_confident": false,
++      "actual_confident": false,
++      "confidence_correct": true,
++      "expected_relevant_sources": [],
++      "retrieved_sources": [],
++      "recall_hit": true,
++      "precision": null
++    },
++    {
++      "id": "RAG-012",
++      "category": "case_insensitivity",
++      "question": "WHAT WAS MY CREATININE???",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-08-20 (renal.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-08-20 (renal.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    },
++    {
++      "id": "RAG-013",
++      "category": "distractor_heavy",
++      "question": "What did my liver enzymes show?",
++      "expected_confident": true,
++      "actual_confident": true,
++      "confidence_correct": true,
++      "expected_relevant_sources": [
++        "Lab report from 2026-09-01 (liver_panel.pdf)"
++      ],
++      "retrieved_sources": [
++        "Lab report from 2026-09-01 (liver_panel.pdf)"
++      ],
++      "recall_hit": true,
++      "precision": 1.0
++    }
++  ],
++  "llm_spot_check": []
++}
+\ No newline at end of file
+diff --git a/ui/drug_checker.py b/ui/drug_checker.py
+index 20e51bf..9a5c839 100644
+--- a/ui/drug_checker.py
++++ b/ui/drug_checker.py
+@@ -140,7 +140,7 @@ def render_drug_checker_tab():
+                     st.divider()
+                     st.caption(
+                         "Interaction data sourced from OpenFDA. "
+-                        "Clinical explanation generated by Groq LLaMA3. "
++                        "Clinical explanation generated by Groq (OpenAI GPT-OSS). "
+                         "This tool is for informational purposes only - always consult a licensed pharmacist or physician."
+                     )
+                     

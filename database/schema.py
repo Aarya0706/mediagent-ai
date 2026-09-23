@@ -28,6 +28,23 @@ default it would have gotten in a fresh CREATE TABLE - see that module.
 """
 
 TABLES = {
+    "patients": (
+        """
+        CREATE TABLE IF NOT EXISTS patients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            display_name TEXT NOT NULL,
+            normalized_name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )
+        """,
+        {
+            "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+            "display_name": "TEXT NOT NULL",
+            "normalized_name": "TEXT NOT NULL",
+            "created_at": "TEXT NOT NULL",
+        },
+    ),
+
     "users": (
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -38,6 +55,7 @@ TABLES = {
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'staff',
             patient_name TEXT,
+            patient_id INTEGER,
             created_at TEXT NOT NULL,
             updated_at TEXT
         )
@@ -50,6 +68,7 @@ TABLES = {
             "password_hash": "TEXT NOT NULL",
             "role": "TEXT NOT NULL DEFAULT 'staff'",
             "patient_name": "TEXT",
+            "patient_id": "INTEGER",
             "created_at": "TEXT NOT NULL",
             "updated_at": "TEXT",
         },
@@ -60,6 +79,7 @@ TABLES = {
         CREATE TABLE IF NOT EXISTS cases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             patient_name TEXT NOT NULL,
+            patient_id INTEGER,
             symptoms TEXT NOT NULL,
             severity TEXT NOT NULL,
             department TEXT NOT NULL,
@@ -74,6 +94,7 @@ TABLES = {
         {
             "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
             "patient_name": "TEXT NOT NULL DEFAULT 'Unknown'",
+            "patient_id": "INTEGER",
             "symptoms": "TEXT NOT NULL",
             "severity": "TEXT NOT NULL",
             "department": "TEXT NOT NULL",
@@ -90,6 +111,7 @@ TABLES = {
         """
         CREATE TABLE IF NOT EXISTS health_profile (
             patient_name TEXT PRIMARY KEY COLLATE NOCASE,
+            patient_id INTEGER,
             age INTEGER,
             gender TEXT,
             blood_group TEXT,
@@ -103,6 +125,7 @@ TABLES = {
         """,
         {
             "patient_name": "TEXT PRIMARY KEY COLLATE NOCASE",
+            "patient_id": "INTEGER",
             "age": "INTEGER",
             "gender": "TEXT",
             "blood_group": "TEXT",
@@ -120,6 +143,7 @@ TABLES = {
         CREATE TABLE IF NOT EXISTS lab_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             patient_name TEXT NOT NULL,
+            patient_id INTEGER,
             file_name TEXT NOT NULL,
             raw_text TEXT DEFAULT '',
             ai_summary TEXT DEFAULT '',
@@ -130,6 +154,7 @@ TABLES = {
         {
             "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
             "patient_name": "TEXT NOT NULL",
+            "patient_id": "INTEGER",
             "file_name": "TEXT NOT NULL",
             "raw_text": "TEXT DEFAULT ''",
             "ai_summary": "TEXT DEFAULT ''",
@@ -144,6 +169,7 @@ TABLES = {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             report_id INTEGER NOT NULL,
             patient_name TEXT NOT NULL,
+            patient_id INTEGER,
             parameter TEXT NOT NULL,
             value REAL,
             unit TEXT DEFAULT '',
@@ -158,6 +184,7 @@ TABLES = {
             "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
             "report_id": "INTEGER NOT NULL",
             "patient_name": "TEXT NOT NULL",
+            "patient_id": "INTEGER",
             "parameter": "TEXT NOT NULL",
             "value": "REAL",
             "unit": "TEXT DEFAULT ''",
@@ -177,26 +204,30 @@ TABLES = {
 
 
 # ============================================================
-# KNOWN LIMITATION: patient_name as the join key, not a real FK
+# IDENTITY MODEL: patient_id migration, in progress
 # ============================================================
 #
-# Every table above keys off `patient_name` (a free-text, case-
-# insensitive string) rather than a `patient_id` foreign key into a
-# `patients` table. `users.patient_name` is the sole source of truth
-# for which records a patient-role login can see (tools/authorization.py)
-# - so this isn't just an inconsistency, it's the actual identity model
-# the whole app is built on.
+# Every table above now HAS a `patient_id` column pointing at the new
+# `patients` table (see database/patients.py for get_or_create_patient()
+# / find_patient_id()), and database/migrations.py backfills it
+# automatically on every startup for any row where it's still NULL,
+# matching by a normalized (trimmed, lowercased, whitespace-collapsed)
+# version of patient_name. tools/auth_tools.py now also resolves and
+# stores patient_id on every patient-role signup, and refuses to create
+# a second patient-role login against a patient_id that's already
+# claimed - the actual name-collision security hole this migration
+# exists to close.
 #
-# This is a real normalization gap (two patients who share a name would
-# collide; renaming a patient means updating every table). It is NOT
-# fixed here on purpose: doing it properly means (1) adding a `patients`
-# table, (2) backfilling a `patient_id` on every existing row in cases /
-# health_profile / lab_reports / lab_values / users against whatever
-# real data already lives in data/hospital.db on the deployed instance,
-# and (3) rewriting every query site (tools/*.py, app.py, tools/
-# chat_rag_tools.py, tools/authorization.py) to join on the new id.
-# That's a live-data migration with real corruption risk if the name-
-# matching backfill logic gets an edge case wrong (e.g. two differently-
-# cased spellings of the same patient), not a schema-only cleanup - it
-# deserves its own pass with a backup of the real database in hand,
-# not one folded silently into this one.
+# What this does NOT do yet: none of the read/write query sites in
+# tools/*.py, app.py, or ui/*.py have been switched to filter or join
+# on patient_id instead of patient_name - they still read/write
+# patient_name exactly as before, so nothing about existing behavior
+# changes yet. `patient_id` is populated and available, but
+# `patient_name` remains the column every query actually uses. That
+# query-by-query rewrite (tools/save_case.py, tools/lab_report_tools.py,
+# tools/health_profile_tools.py, tools/chat_rag_tools.py,
+# tools/authorization.py's can_access_patient_record(), etc.) is a
+# separate, larger pass - deliberately not folded in here, since it
+# touches how every screen reads data and deserves to be done (and
+# tested against a real backup of data/hospital.db) on its own, not
+# silently bundled into a schema change.

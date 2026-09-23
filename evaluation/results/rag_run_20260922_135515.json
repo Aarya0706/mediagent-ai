@@ -1,0 +1,216 @@
+{
+  "metrics": {
+    "total_cases": 13,
+    "retrieval_recall_pct": 100.0,
+    "confidence_accuracy_pct": 100.0,
+    "avg_precision_pct": 100.0
+  },
+  "records": [
+    {
+      "id": "RAG-001",
+      "category": "direct_match",
+      "question": "What was my hemoglobin level?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-03-01 (cbc_march.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-03-01 (cbc_march.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-002",
+      "category": "synonym_expansion",
+      "question": "Do I have diabetes?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-04-12 (metabolic_panel.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-04-12 (metabolic_panel.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-003",
+      "category": "synonym_expansion",
+      "question": "Is my kidney function okay?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-05-05 (renal_panel.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-05-05 (renal_panel.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-004",
+      "category": "synonym_expansion",
+      "question": "Should I be worried about my heart given these results?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-06-01 (lipid_panel.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-06-01 (lipid_panel.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-005",
+      "category": "synonym_expansion",
+      "question": "What's going on with my thyroid?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-06-15 (thyroid_panel.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-06-15 (thyroid_panel.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-006",
+      "category": "synonym_expansion",
+      "question": "I've been bruising easily, is that linked to my bloodwork?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-07-01 (cbc.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-07-01 (cbc.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-007",
+      "category": "synonym_expansion",
+      "question": "Does my bloodwork show any signs of infection?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-07-10 (cbc.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-07-10 (cbc.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-008",
+      "category": "synonym_expansion",
+      "question": "How has my blood pressure been trending?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Symptom checker case from 2026-07-15"
+      ],
+      "retrieved_sources": [
+        "Symptom checker case from 2026-07-15"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-009",
+      "category": "multi_chunk_ranking",
+      "question": "What did my most recent CBC show for anemia?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-08-01 (cbc_august.pdf)",
+        "Symptom checker case from 2026-07-28"
+      ],
+      "retrieved_sources": [
+        "Symptom checker case from 2026-07-28",
+        "Lab report from 2026-08-01 (cbc_august.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-010",
+      "category": "no_confident_match",
+      "question": "What foods are generally good for heart health?",
+      "expected_confident": false,
+      "actual_confident": false,
+      "confidence_correct": true,
+      "expected_relevant_sources": [],
+      "retrieved_sources": [
+        "Symptom checker case from 2026-05-11",
+        "Lab report from 2026-05-11 (vitamin_panel.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": null
+    },
+    {
+      "id": "RAG-011",
+      "category": "empty_records",
+      "question": "What do my lab results show?",
+      "expected_confident": false,
+      "actual_confident": false,
+      "confidence_correct": true,
+      "expected_relevant_sources": [],
+      "retrieved_sources": [],
+      "recall_hit": true,
+      "precision": null
+    },
+    {
+      "id": "RAG-012",
+      "category": "case_insensitivity",
+      "question": "WHAT WAS MY CREATININE???",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-08-20 (renal.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-08-20 (renal.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    },
+    {
+      "id": "RAG-013",
+      "category": "distractor_heavy",
+      "question": "What did my liver enzymes show?",
+      "expected_confident": true,
+      "actual_confident": true,
+      "confidence_correct": true,
+      "expected_relevant_sources": [
+        "Lab report from 2026-09-01 (liver_panel.pdf)"
+      ],
+      "retrieved_sources": [
+        "Lab report from 2026-09-01 (liver_panel.pdf)"
+      ],
+      "recall_hit": true,
+      "precision": 1.0
+    }
+  ],
+  "llm_spot_check": []
+}

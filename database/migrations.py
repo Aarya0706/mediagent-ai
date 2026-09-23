@@ -27,12 +27,19 @@ Usage:
 from database.connection import get_connection
 from database.schema import TABLES
 
+# Every table (other than `patients` itself) that carries a
+# patient_name + patient_id pair needing backfill. `users` is included
+# because patient-role logins are also part of the identity model - see
+# _backfill_patient_ids() below and the note at the bottom of schema.py.
+_PATIENT_SCOPED_TABLES = ("users", "cases", "health_profile", "lab_reports", "lab_values")
+
 
 def run_migrations():
-    """Creates every table in TABLES if missing, and adds any column
+    """Creates every table in TABLES if missing, adds any column
     present in TABLES but missing from an existing table (using that
-    column's real type/default, not a guess). Returns a dict of
-    {table_name: [columns_added]} for anything that changed, so
+    column's real type/default, not a guess), and backfills patient_id
+    on every patient-scoped row that doesn't have one yet. Returns a
+    dict of {table_name: [columns_added]} for anything that changed, so
     callers/tests can see what happened - usually empty."""
     added = {}
 
@@ -61,7 +68,56 @@ def run_migrations():
 
         conn.commit()
 
+        backfilled = _backfill_patient_ids(conn)
+        if backfilled:
+            added.setdefault("patients", []).append(f"backfilled {backfilled} row(s)")
+
     return added
+
+
+def _backfill_patient_ids(conn):
+    """For every row in _PATIENT_SCOPED_TABLES with a NULL patient_id
+    and a non-blank patient_name, resolves (or creates) a `patients`
+    row via database.patients.get_or_create_patient() and sets
+    patient_id. Idempotent: rows that already have a patient_id are
+    skipped, so this is a no-op on every run after the first. Returns
+    the total number of rows updated, for callers/tests.
+
+    Import is local (not top-of-file) to avoid a circular import -
+    database.patients imports get_connection from this package too."""
+    from database.patients import get_or_create_patient
+
+    cursor = conn.cursor()
+    total_updated = 0
+
+    for table_name in _PATIENT_SCOPED_TABLES:
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        columns = {row["name"] for row in cursor.fetchall()}
+        if "patient_id" not in columns or "patient_name" not in columns:
+            continue
+
+        id_column = "id" if "id" in columns else "patient_name"
+
+        cursor.execute(
+            f"SELECT {id_column} AS row_key, patient_name FROM {table_name} "
+            f"WHERE patient_id IS NULL AND patient_name IS NOT NULL AND TRIM(patient_name) != ''"
+        )
+        rows = cursor.fetchall()
+
+        for row in rows:
+            patient_id = get_or_create_patient(row["patient_name"], conn=conn)
+            if patient_id is None:
+                continue
+            cursor.execute(
+                f"UPDATE {table_name} SET patient_id = ? WHERE {id_column} = ?",
+                (patient_id, row["row_key"]),
+            )
+            total_updated += 1
+
+    if total_updated:
+        conn.commit()
+
+    return total_updated
 
 
 if __name__ == "__main__":

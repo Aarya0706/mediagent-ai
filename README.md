@@ -4,7 +4,7 @@
 
 ### Agentic AI Clinical Decision Support Platform
 
-*Transforming hospital triage and clinical decision-making through Multi-Agent AI, intelligent healthcare workflows, and real-time patient analytics.*
+*Multi-agent triage with deterministic safety guardrails, patient-scoped RAG, runtime observability, and automated evaluation — measured, not just claimed.*
 
 <p align="center">
 
@@ -32,13 +32,11 @@
 
 # 📖 Overview
 
-MediAgent AI is an **Agentic AI Clinical Decision Support Platform** designed to assist both patients and healthcare professionals throughout the clinical assessment workflow.
+MediAgent AI is an **agentic AI clinical workflow platform**: a 3-agent LangChain pipeline (Intake → Triage → Recommendation) sits behind deterministic safety guardrails, patient-scoped RAG retrieval, per-run observability, and regression-tested evaluation suites — the parts of an AI system that are usually the hardest to get right and the easiest to skip in a portfolio project.
 
-Unlike traditional symptom checkers, MediAgent AI combines a **Multi-Agent AI architecture**, structured medical workflows, real-time analytics, and intelligent clinical reasoning to support hospital triage, patient management, and decision-making.
+The clinical feature set (symptom triage, emergency detection, doctor workflow, AI-powered health chat, lab report interpretation, appointment prep, health profiles) is the surface. What backs it: safety logic that runs *after* the LLM and can't be talked out of its rules, retrieval that's evaluated against labeled cases instead of eyeballed, and telemetry on every pipeline run rather than a black box.
 
-The platform provides an end-to-end healthcare experience—from patient symptom analysis and emergency detection to doctor workflow management, AI-powered health conversations, lab report interpretation, appointment preparation, and personalized health profiles.
-
-Built using **LangChain**, **Groq (OpenAI GPT-OSS)**, **Streamlit**, and **SQLite**, MediAgent AI demonstrates how modern AI systems can enhance healthcare workflows while maintaining transparency through explainable recommendations.
+Built using **LangChain**, **Groq (OpenAI GPT-OSS)**, **Streamlit**, and **SQLite** — see the **Evaluation** section below for the numbers these claims are backed by, and **Security Model & Limitations** for what's explicitly still scoped out.
 
 ---
 
@@ -584,8 +582,9 @@ Patients can maintain a persistent digital health profile that is automatically 
 mediagent-ai/
 │
 ├── agents/                  # Multi-Agent AI pipeline
-│   ├── orchestrator.py
-│   └── pipeline.py
+│   ├── pipeline.py          #   3-agent Intake → Triage → Recommend chain (production)
+│   ├── safety_gate.py       #   deterministic emergency/red-flag overrides
+│   └── observability.py     #   per-run latency/status logging
 │
 ├── database/                # Database initialization & schema
 │   ├── connection.py        #   single get_connection() / DB_PATH
