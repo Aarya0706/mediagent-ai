@@ -26,7 +26,7 @@
 
 ### 🌐 Streamlit Application
 
-> https://mediagent-ai-pbgsa8rs7dvyyhbpvydtc7.streamlit.app
+> https://mediagent-ai.streamlit.app/
 
 ---
 
